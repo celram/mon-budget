@@ -65,23 +65,86 @@ function Dashboard({bank,receipts,bills}){
   const income=bank.filter(b=>b.amount>0).reduce((s,b)=>s+b.amount,0);
   const expenses=bank.filter(b=>b.amount<0).reduce((s,b)=>s+Math.abs(b.amount),0);
   const balance=income-expenses;
+  // Lignes bancaires sans justificatif (ni ticket ni facture liés)
+  const unjustified=bank.filter(b=>{
+    if(b.amount>=0)return false;
+    const hasReceipt=receipts.find(r=>r.bankId===b.id);
+    const hasBill=bills.find(f=>f.bankId===b.id);
+    return !hasReceipt&&!hasBill;
+  });
+
   const alerts=[
     ...bills.filter(f=>f.status==="missing").map(f=>({type:"coral",msg:`Facture manquante : ${f.label} (${fmtAbs(f.amount)})`})),
     ...bills.filter(f=>f.status==="doubt").map(f=>({type:"amber",msg:`Incertain : ${f.label} — paiement non confirmé`})),
     ...receipts.filter(r=>r.status==="missing").map(r=>({type:"amber",msg:`Ticket sans contrepartie : ${r.label} (${fmtAbs(r.amount)})`})),
+    ...unjustified.map(b=>({type:"amber",msg:`Dépense sans justificatif : ${b.label} (${fmtAbs(Math.abs(b.amount))})`})),
   ];
+
+  // ── Camembert data ──────────────────────────────────────────────────
+  const PIE_COLORS=["#7C3AED","#EC4899","#F97316","#10B981","#F59E0B","#3B82F6","#EF4444","#8B5CF6","#06B6D4","#84CC16"];
+
+  const catTotals={};
+  bills.forEach(b=>{
+    const cat=b.category||"Autre";
+    catTotals[cat]=(catTotals[cat]||0)+b.amount;
+  });
+  const cbTotal=receipts.reduce((s,r)=>s+r.amount,0);
+  if(cbTotal>0) catTotals["Dépenses CB"]=(catTotals["Dépenses CB"]||0)+cbTotal;
+
+  const pieData=Object.entries(catTotals)
+    .map(([name,val])=>({name,val:Math.abs(val)}))
+    .filter(d=>d.val>0)
+    .sort((a,b)=>b.val-a.val);
+  const pieTotal=pieData.reduce((s,d)=>s+d.val,0);
+
+  // Camembert conic-gradient (natif iOS Safari)
+  const PieChart=()=>{
+    if(pieData.length===0)return null;
+    let cum=0;
+    const stops=pieData.map((d,i)=>{
+      const pct=d.val/pieTotal*100;
+      const s=`${PIE_COLORS[i%PIE_COLORS.length]} ${cum.toFixed(1)}% ${(cum+pct).toFixed(1)}%`;
+      cum+=pct;
+      return s;
+    }).join(", ");
+    const gradient=`conic-gradient(${stops})`;
+    return <div style={{display:"flex",alignItems:"center",gap:20}}>
+      <div style={{position:"relative",flexShrink:0}}>
+        <div style={{width:140,height:140,borderRadius:"50%",background:gradient}}/>
+        <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",
+          width:64,height:64,borderRadius:"50%",background:C.surface,
+          display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+          <p style={{fontSize:9,color:C.sub,marginBottom:1}}>Total</p>
+          <p style={{fontSize:11,fontWeight:700,color:C.navy}}>{fmtAbs(pieTotal)}</p>
+        </div>
+      </div>
+      <div style={{flex:1,minWidth:0}}>
+        {pieData.map((d,i)=><div key={d.name} style={{display:"flex",alignItems:"center",gap:7,marginBottom:8}}>
+          <div style={{width:9,height:9,borderRadius:"50%",background:PIE_COLORS[i%PIE_COLORS.length],flexShrink:0}}/>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{fontSize:12,fontWeight:600,color:C.navy,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</p>
+            <p style={{fontSize:10,color:C.sub}}>{fmtAbs(d.val)} · {Math.round(d.val/pieTotal*100)}%</p>
+          </div>
+        </div>)}
+      </div>
+    </div>;
+  };
+
   return <div style={{animation:"fadeIn .3s ease"}}>
-    <div style={{background:C.navy,borderRadius:20,padding:"28px 24px 24px",marginBottom:20,position:"relative",overflow:"hidden"}}>
-      <div style={{position:"absolute",top:-30,right:-30,width:120,height:120,borderRadius:"50%",background:"rgba(79,70,229,.35)"}}/>
-      <div style={{position:"absolute",bottom:-20,left:40,width:80,height:80,borderRadius:"50%",background:"rgba(79,70,229,.18)"}}/>
-      <p style={{color:"rgba(255,255,255,.6)",fontSize:13,marginBottom:6,position:"relative"}}>Solde estimé — Juin 2026</p>
+    {/* Hero */}
+    <div style={{background:"linear-gradient(135deg,#7C3AED 0%,#EC4899 60%,#F97316 100%)",borderRadius:20,padding:"28px 24px 24px",marginBottom:20,position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",top:-30,right:-30,width:120,height:120,borderRadius:"50%",background:"rgba(255,255,255,.12)"}}/>
+      <div style={{position:"absolute",bottom:-20,left:40,width:80,height:80,borderRadius:"50%",background:"rgba(255,255,255,.08)"}}/>
+      <p style={{color:"rgba(255,255,255,.7)",fontSize:13,marginBottom:6,position:"relative"}}>Solde estimé</p>
       <p style={{color:"#fff",fontSize:36,fontWeight:700,letterSpacing:-1,position:"relative"}}>{fmtAbs(balance)}</p>
       <div style={{display:"flex",gap:20,marginTop:20,position:"relative"}}>
-        <div><p style={{color:"rgba(255,255,255,.5)",fontSize:11,marginBottom:2}}>ENTRÉES</p><p style={{color:C.sage,fontWeight:700,fontSize:16}}>+{fmtAbs(income)}</p></div>
-        <div style={{width:1,background:"rgba(255,255,255,.12)"}}/>
-        <div><p style={{color:"rgba(255,255,255,.5)",fontSize:11,marginBottom:2}}>SORTIES</p><p style={{color:C.coral,fontWeight:700,fontSize:16}}>−{fmtAbs(expenses)}</p></div>
+        <div><p style={{color:"rgba(255,255,255,.6)",fontSize:11,marginBottom:2}}>ENTRÉES</p><p style={{color:"#fff",fontWeight:700,fontSize:16}}>+{fmtAbs(income)}</p></div>
+        <div style={{width:1,background:"rgba(255,255,255,.2)"}}/>
+        <div><p style={{color:"rgba(255,255,255,.6)",fontSize:11,marginBottom:2}}>SORTIES</p><p style={{color:"#fff",fontWeight:700,fontSize:16}}>−{fmtAbs(expenses)}</p></div>
       </div>
     </div>
+
+    {/* Compteurs */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:20}}>
       {[
         {label:"Rapprochés",val:receipts.filter(r=>r.status==="matched").length+bills.filter(b=>b.status==="paid").length,color:C.sage,bg:C.sageLight},
@@ -92,21 +155,25 @@ function Dashboard({bank,receipts,bills}){
         <p style={{fontSize:11,color:s.color,marginTop:4,fontWeight:600}}>{s.label}</p>
       </div>)}
     </div>
+
+    {/* Alertes */}
     {alerts.length>0&&<div style={{marginBottom:20}}>
       <p style={{fontSize:13,fontWeight:700,color:C.sub,marginBottom:10,letterSpacing:.5,textTransform:"uppercase"}}>Alertes</p>
       {alerts.map((a,i)=><div key={i} style={{background:a.type==="coral"?C.coralLight:C.amberLight,borderLeft:`3px solid ${a.type==="coral"?C.coral:C.amber}`,borderRadius:10,padding:"10px 14px",marginBottom:8,fontSize:13,color:C.navy}}>
         {a.type==="coral"?"✕ ":"⚠ "}{a.msg}
       </div>)}
     </div>}
-    <p style={{fontSize:13,fontWeight:700,color:C.sub,marginBottom:10,letterSpacing:.5,textTransform:"uppercase"}}>Dernières opérations</p>
-    {[...bank].reverse().slice(0,5).map(b=><div key={b.id} style={{background:C.surface,borderRadius:12,padding:"12px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",border:`1px solid ${C.border}`}}>
-      <div><p style={{fontSize:13,fontWeight:600,color:C.navy}}>{b.label}</p><p style={{fontSize:11,color:C.sub,marginTop:2}}>{fmtDate(b.date)}</p></div>
-      <p style={{fontWeight:700,fontSize:14,color:b.amount>0?C.sage:C.navy}}>{fmt(b.amount)}</p>
-    </div>)}
+
+    {/* Camembert */}
+    {pieData.length>0&&<div style={{background:C.surface,borderRadius:16,padding:"16px",marginBottom:20,border:`1px solid ${C.border}`}}>
+      <p style={{fontSize:13,fontWeight:700,color:C.sub,marginBottom:14,letterSpacing:.5,textTransform:"uppercase"}}>Répartition des dépenses</p>
+      <PieChart/>
+    </div>}
+
+
   </div>;
 }
 
-// ── Tickets — saisie manuelle + photo preuve ──────────────────────────────
 function Receipts({receipts,setReceipts,bank,setBank}){
   const [view,setView]=useState("list");
   const [selected,setSelected]=useState(null);
@@ -332,7 +399,7 @@ function Receipts({receipts,setReceipts,bank,setBank}){
   // ── LIST VIEW ─────────────────────────────────────────────────────────
   return <div style={{animation:"fadeIn .3s ease"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-      <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Tickets de caisse</h2>
+      <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Dépenses variables</h2>
       <button onClick={()=>setView("add")} style={{background:"linear-gradient(135deg,#7C3AED,#EC4899)",color:"#fff",border:"none",borderRadius:10,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ Ajouter</button>
     </div>
     {receipts.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.sub}}>
@@ -414,7 +481,7 @@ function Bank({bank,setBank,receipts,bills}){
 }
 
 // ── Factures fixes ────────────────────────────────────────────────────────
-const CATS=["Énergie","Télécom","Assurance","Eau","Internet","Loisirs","Loyer","Autre"];
+const CATS=["Énergie","Télécom & Internet","Assurance","Eau","Prêt","Loisirs","École","Impôts","Autre"];
 function Bills({bills,setBills,currentMonth}){
   const [schedules,setSchedules]=useState(()=>load("schedules",[]));
   const [view,setView]=useState("list");
@@ -431,8 +498,9 @@ function Bills({bills,setBills,currentMonth}){
   const [sDateFrom,setSDateFrom]=useState("");
   const [sDateTo,setSDateTo]=useState("");
   // New schedule form
-  const [form,setForm]=useState({label:"",category:"Autre",amount:"",dateFrom:"",dateTo:"",fixedDay:""});
-  const CATS=["Énergie","Télécom","Assurance","Eau","Internet","Loisirs","Loyer","Autre"];
+  const nowYM=`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`;
+  const [form,setForm]=useState({label:"",category:"Autre",amount:"",dateFrom:nowYM,dateTo:nowYM,fixedDay:""});
+  const CATS=["Énergie","Télécom & Internet","Assurance","Eau","Prêt","Loisirs","École","Impôts","Autre"];
 
   useEffect(()=>save("schedules",schedules),[schedules]);
 
@@ -527,11 +595,11 @@ function Bills({bills,setBills,currentMonth}){
     return Math.max(0,(ty-fy)*12+(tm-fm)+1);
   };
 
-  // Sélecteur de mois iOS-friendly : liste déroulante texte
   const MonthPicker=({label,value,onChange})=>{
     const opts=[];
-    for(let y=2024;y<=2028;y++){
-      for(let m=1;m<=12;m++){
+    for(let y=2026;y<=2035;y++){
+      const startM=(y===2026?6:1);
+      for(let m=startM;m<=12;m++){
         const val=`${y}-${String(m).padStart(2,"0")}`;
         const lbl=new Date(y,m-1,1).toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
         opts.push({val,lbl});
@@ -540,7 +608,7 @@ function Bills({bills,setBills,currentMonth}){
     return <div>
       <p style={{fontSize:12,color:C.sub,marginBottom:6}}>{label}</p>
       <select value={value} onChange={e=>onChange(e.target.value)}
-        style={{width:"100%",padding:"11px 10px",borderRadius:8,border:`1px solid ${C.border}`,fontSize:13,background:"#fff",color:C.navy}}>
+        style={{width:"100%",padding:"11px 10px",borderRadius:8,border:`1px solid ${C.border}`,fontSize:14,background:"#fff",color:C.navy}}>
         <option value="">-- Choisir --</option>
         {opts.map(o=><option key={o.val} value={o.val}>{o.lbl}</option>)}
       </select>
@@ -570,9 +638,10 @@ function Bills({bills,setBills,currentMonth}){
         <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Jour du prélèvement</p>
         <input type="number" inputMode="numeric" value={sFixedDay} onChange={e=>setSFixedDay(e.target.value)}
           style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
-        <MonthPicker label="Premier prélèvement" value={sDateFrom} onChange={setSDateFrom}/>
-        <div style={{marginTop:10}}/>
-        <MonthPicker label="Dernier prélèvement" value={sDateTo} onChange={setSDateTo}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <MonthPicker label="Premier prélèvement" value={sDateFrom} onChange={setSDateFrom}/>
+          <MonthPicker label="Dernier prélèvement" value={sDateTo} onChange={setSDateTo}/>
+        </div>
         {sDateFrom&&sDateTo&&<div style={{background:C.indigoLight,borderRadius:8,padding:"10px 12px",margin:"12px 0",fontSize:13,color:C.indigo}}>
           📅 {fmtMonth(sDateFrom)} → {fmtMonth(sDateTo)}
         </div>}
@@ -643,9 +712,10 @@ function Bills({bills,setBills,currentMonth}){
         <input type="number" inputMode="numeric" placeholder="ex : 5" value={form.fixedDay}
           onChange={e=>setForm(f=>({...f,fixedDay:e.target.value}))}
           style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
-        <MonthPicker label="Premier prélèvement" value={form.dateFrom} onChange={v=>setForm(f=>({...f,dateFrom:v}))}/>
-        <div style={{marginTop:10}}/>
-        <MonthPicker label="Dernier prélèvement" value={form.dateTo} onChange={v=>setForm(f=>({...f,dateTo:v}))}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <MonthPicker label="Premier prélèvement" value={form.dateFrom} onChange={v=>setForm(f=>({...f,dateFrom:v}))}/>
+          <MonthPicker label="Dernier prélèvement" value={form.dateTo} onChange={v=>setForm(f=>({...f,dateTo:v}))}/>
+        </div>
         {(form.dateFrom||form.dateTo)&&<div style={{background:C.indigoLight,borderRadius:8,padding:"10px 12px",margin:"12px 0",fontSize:13,color:C.indigo}}>
           📅 {form.dateFrom?fmtMonth(form.dateFrom):"…"} → {form.dateTo?fmtMonth(form.dateTo):"…"}
         </div>}
@@ -689,7 +759,7 @@ function Bills({bills,setBills,currentMonth}){
   // ── LIST VIEW ─────────────────────────────────────────────────────────
   return <div style={{animation:"fadeIn .3s ease"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-      <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Factures fixes</h2>
+      <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Dépenses fixes</h2>
       <button onClick={()=>setView("addSchedule")}
         style={{background:"linear-gradient(135deg,#7C3AED,#EC4899)",color:"#fff",border:"none",borderRadius:10,padding:"9px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>
         + Échéancier
@@ -751,8 +821,8 @@ function MonthSelector({currentMonth,setCurrentMonth}){
 const TABS=[
   {id:"dashboard",icon:"◉",label:"Accueil"},
   {id:"receipts",icon:"🧾",label:"Tickets"},
-  {id:"bank",icon:"🏦",label:"Relevé"},
   {id:"bills",icon:"📋",label:"Factures"},
+  {id:"bank",icon:"🏦",label:"Relevé"},
 ];
 
 // ── Export helpers ───────────────────────────────────────────────────────
@@ -903,10 +973,10 @@ function App(){
 
   return <div style={{maxWidth:430,margin:"0 auto",minHeight:"100dvh",background:C.bg,position:"relative"}}>
     {/* Header */}
-    <div style={{background:"linear-gradient(135deg,#7C3AED 0%,#EC4899 60%,#F97316 100%)",height:60,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 12px"}}>
-      <button onClick={()=>setShowExport(true)} style={{background:"rgba(255,255,255,.2)",border:"none",borderRadius:8,padding:"5px 10px",color:"#fff",fontSize:18,cursor:"pointer"}}>⋮</button>
+    <div style={{background:"linear-gradient(135deg,#7C3AED 0%,#EC4899 60%,#F97316 100%)",height:60,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 12px",gap:8}}>
+      <button onClick={()=>setShowExport(true)} style={{background:"rgba(255,255,255,.2)",border:"none",borderRadius:8,padding:"5px 10px",color:"#fff",fontSize:18,cursor:"pointer",flexShrink:0}}>⋮</button>
       <MonthSelector currentMonth={currentMonth} setCurrentMonth={setCurrentMonth}/>
-      <div style={{width:38}}/>
+      <button onClick={handleExportJSON} style={{background:"linear-gradient(135deg,#0EA5E9,#2563EB)",border:"2px solid rgba(255,255,255,.4)",borderRadius:10,padding:"5px 10px",color:"#fff",fontSize:11,fontWeight:800,cursor:"pointer",flexShrink:0,letterSpacing:.3,boxShadow:"0 2px 8px rgba(37,99,235,.5)"}}>💾 Sauvegarder</button>
     </div>
 
     {/* Export/Import modal */}
