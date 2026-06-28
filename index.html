@@ -465,6 +465,9 @@ function Bank({bank,setBank,receipts,bills,recettes=[]}){
       const bm=bills.find(f=>f.bankId===b.id);
       const rec=recettes.find(r=>r.bankId===b.id);
       const match=rm||bm||rec;
+      const amountColor = b.amount>0
+        ? "#2563EB"  // recette → bleu
+        : match ? C.navy : C.coral; // dépense rapprochée → noir, non rapprochée → rouge
       return <div key={b.id} style={{background:C.surface,borderRadius:12,padding:"12px 14px",marginBottom:8,border:`1px solid ${C.border}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
           <div style={{flex:1,minWidth:0}}>
@@ -473,7 +476,7 @@ function Bank({bank,setBank,receipts,bills,recettes=[]}){
             {match&&<p style={{fontSize:11,color:C.sage,marginTop:3}}>✔ {rm?`Ticket : ${rm.label}`:rec?`Recette : ${rec.label}`:`Facture : ${bm.label}`}</p>}
           </div>
           <div style={{textAlign:"right",marginLeft:12}}>
-            <p style={{fontWeight:700,fontSize:14,color:b.amount>0?C.sage:C.navy}}>{fmt(b.amount)}</p>
+            <p style={{fontWeight:700,fontSize:14,color:amountColor}}>{fmt(b.amount)}</p>
             {match&&<div style={{marginTop:4}}><Badge s="matched"/></div>}
           </div>
         </div>
@@ -866,48 +869,141 @@ function autoMatch(items, setItems, bank, type) {
 // ── Recettes ──────────────────────────────────────────────────────────────
 function Recettes({recettes, setRecettes, bank}) {
   const [view, setView] = useState("list");
+  const [selected, setSelected] = useState(null);
+  const [addType, setAddType] = useState(null); // null | "one" | "recurring"
+  // Form ponctuelle
   const [form, setForm] = useState({label:"", amount:"", date:todayISO()});
-  const fileRef = useRef();
+  // Form récurrente
+  const [rForm, setRForm] = useState({label:"", amount:"", day:"", dateFrom:"", dateTo:""});
+  // Edit state
+  const [eLabel, setELabel] = useState("");
+  const [eAmount, setEAmount] = useState("");
+  const [eDate, setEDate] = useState("");
+  // Schedules récurrentes
+  const [rSchedules, setRSchedules] = useState(()=>load("recSchedules",[]));
+  useEffect(()=>save("recSchedules",rSchedules),[rSchedules]);
 
-  const add = () => {
-    if(!form.label || !form.amount) return;
-    const newR = {id:"rec"+Date.now(), date:form.date, label:form.label,
-      amount:parseFloat(form.amount.replace(",",".")), status:"missing", bankId:null};
-    setRecettes(r => [newR, ...r].sort((a,b) => b.date.localeCompare(a.date)));
-    setForm({label:"", amount:"", date:todayISO()});
-    setView("list");
+  const fmtMonth = ym => {
+    if(!ym||ym.length<7) return "";
+    const[y,m]=ym.split("-");
+    return new Date(+y,+m-1,1).toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
   };
 
-  const deleteRec = id => setRecettes(r => r.filter(x => x.id !== id));
-  const unlinkRec = id => setRecettes(r => r.map(x => x.id===id ? {...x, status:"missing", bankId:null} : x));
+  const MonthPicker = ({label,value,onChange}) => {
+    const opts=[];
+    for(let y=2026;y<=2035;y++){
+      const startM=(y===2026?6:1);
+      for(let m=startM;m<=12;m++){
+        const val=`${y}-${String(m).padStart(2,"0")}`;
+        const lbl=new Date(y,m-1,1).toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+        opts.push({val,lbl});
+      }
+    }
+    return <div>
+      <p style={{fontSize:12,color:C.sub,marginBottom:6}}>{label}</p>
+      <select value={value} onChange={e=>onChange(e.target.value)}
+        style={{width:"100%",padding:"11px 10px",borderRadius:8,border:`1px solid ${C.border}`,fontSize:14,background:"#fff",color:C.navy}}>
+        <option value="">-- Choisir --</option>
+        {opts.map(o=><option key={o.val} value={o.val}>{o.lbl}</option>)}
+      </select>
+    </div>;
+  };
+
+  const generateOccurrences = (sch) => {
+    const occs=[];
+    const[fy,fm]=sch.dateFrom.slice(0,7).split("-").map(Number);
+    const[ty,tm]=sch.dateTo.slice(0,7).split("-").map(Number);
+    let y=fy,m=fm;
+    while(y<ty||(y===ty&&m<=tm)){
+      const dd=String(sch.day).padStart(2,"0");
+      const mm=String(m).padStart(2,"0");
+      occs.push({id:"rec"+Date.now()+Math.random().toString(36).slice(2),
+        scheduleId:sch.id,label:sch.label,amount:sch.amount,
+        date:`${y}-${mm}-${dd}`,status:"missing",bankId:null,type:"recurring"});
+      m++;if(m>12){m=1;y++;}
+    }
+    return occs;
+  };
+
+  const addOne = () => {
+    if(!form.label||!form.amount) return;
+    const newR={id:"rec"+Date.now(),date:form.date,label:form.label,
+      amount:parseFloat(form.amount.replace(",",".")),status:"missing",bankId:null,type:"one"};
+    setRecettes(r=>[newR,...r].sort((a,b)=>b.date.localeCompare(a.date)));
+    setForm({label:"",amount:"",date:todayISO()});
+    setAddType(null);setView("list");
+  };
+
+  const addRecurring = () => {
+    if(!rForm.label||!rForm.amount||!rForm.day||!rForm.dateFrom||!rForm.dateTo) return;
+    const sch={id:"rsch"+Date.now(),label:rForm.label,
+      amount:parseFloat(rForm.amount.replace(",",".")),
+      day:parseInt(rForm.day),dateFrom:rForm.dateFrom,dateTo:rForm.dateTo};
+    setRSchedules(s=>[...s,sch]);
+    const occs=generateOccurrences(sch);
+    setRecettes(r=>[...r,...occs].sort((a,b)=>b.date.localeCompare(a.date)));
+    setRForm({label:"",amount:"",day:"",dateFrom:"",dateTo:""});
+    setAddType(null);setView("list");
+  };
+
+  const deleteSchedule = schId => {
+    setRSchedules(s=>s.filter(x=>x.id!==schId));
+    setRecettes(r=>r.filter(x=>x.scheduleId!==schId));
+  };
+
+  const goToEdit = id => {
+    const r=recettes.find(x=>x.id===id);
+    if(!r) return;
+    setELabel(r.label);setEAmount(String(r.amount));setEDate(r.date);
+    setSelected(id);setView("edit");
+  };
+
+  const saveEdit = () => {
+    setRecettes(r=>r.map(x=>x.id===selected
+      ?{...x,label:eLabel,amount:parseFloat(eAmt.replace(",",".")),date:eDate}:x));
+    setSelected(null);setView("list");
+  };
+
+  // Fix: use eAmount not eAmt in saveEdit
+  const saveEditFixed = () => {
+    setRecettes(r=>r.map(x=>x.id===selected
+      ?{...x,label:eLabel,amount:parseFloat(eAmount.replace(",",".")),date:eDate}:x));
+    setSelected(null);setView("list");
+  };
+
+  const deleteRec = id => {
+    setRecettes(r=>r.filter(x=>x.id!==id));
+    setSelected(null);setView("list");
+  };
+
+  const unlinkRec = id => setRecettes(r=>r.map(x=>x.id===id?{...x,status:"missing",bankId:null}:x));
 
   const linkToBank = (recId, bankId) => {
-    setRecettes(r => r.map(x => x.id===recId ? {...x, status:"matched", bankId} : x));
-    setView("list");
+    setRecettes(r=>r.map(x=>x.id===recId?{...x,status:"matched",bankId}:x));
+    setSelected(null);setView("list");
   };
 
-  const [selected, setSelected] = useState(null);
-
   const findCandidates = rec => {
-    const rDate = new Date(rec.date);
-    return bank.filter(b => {
-      if(b.amount <= 0) return false;
-      if(Math.abs(b.amount - rec.amount) > 0.01) return false;
-      return Math.abs((new Date(b.date) - rDate) / (1000*60*60*24)) <= 10;
+    const rDate=new Date(rec.date);
+    return bank.filter(b=>{
+      if(b.amount<=0) return false;
+      if(Math.abs(b.amount-rec.amount)>0.01) return false;
+      return Math.abs((new Date(b.date)-rDate)/(1000*60*60*24))<=10;
     });
   };
 
-  if(view === "match" && selected) {
-    const rec = recettes.find(x => x.id === selected);
-    const candidates = rec ? findCandidates(rec) : [];
-    const others = bank.filter(b => b.amount > 0 && !candidates.find(c => c.id === b.id));
+  // ── MATCH VIEW ────────────────────────────────────────────────────────
+  if(view==="match"){
+    const rec=recettes.find(x=>x.id===selected);
+    const candidates=rec?findCandidates(rec):[];
+    const others=bank.filter(b=>b.amount>0&&!candidates.find(c=>c.id===b.id));
     return <div style={{animation:"fadeIn .3s ease"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
         <button onClick={()=>setView("list")} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
         <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Lier au relevé</h2>
       </div>
       {rec&&<div style={{background:C.indigoLight,borderRadius:12,padding:"11px 14px",marginBottom:16,fontSize:13,color:C.indigo}}>
-        Recette : <strong>{rec.label}</strong> — {fmtAbs(rec.amount)} le {fmtDate(rec.date)}
+        <strong>{rec.label}</strong> — {fmtAbs(rec.amount)} le {fmtDate(rec.date)}
       </div>}
       {candidates.length>0&&<>
         <p style={{fontSize:12,fontWeight:700,color:C.sage,marginBottom:8,textTransform:"uppercase",letterSpacing:.5}}>✔ Correspondances probables</p>
@@ -931,35 +1027,148 @@ function Recettes({recettes, setRecettes, bank}) {
     </div>;
   }
 
-  if(view === "add") return <div style={{animation:"fadeIn .3s ease"}}>
-    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
-      <button onClick={()=>setView("list")} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
-      <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Ajouter une recette</h2>
-    </div>
-    <input type="text" placeholder="Nature du versement *  ex : Salaire juin" value={form.label}
-      onChange={e=>setForm(f=>({...f,label:e.target.value}))}
-      style={{width:"100%",padding:"12px 14px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:10,fontSize:15}}/>
-    <input type="text" inputMode="decimal" placeholder="Montant en € *  ex: 2350,00" value={form.amount}
-      onChange={e=>setForm(f=>({...f,amount:e.target.value}))}
-      style={{width:"100%",padding:"12px 14px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:10,fontSize:15}}/>
-    <input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}
-      style={{width:"100%",padding:"12px 14px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:16,fontSize:15}}/>
-    <button onClick={add} disabled={!form.label||!form.amount}
-      style={{width:"100%",padding:14,background:"linear-gradient(135deg,#7C3AED,#EC4899)",color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",opacity:(!form.label||!form.amount)?.4:1}}>
-      Enregistrer la recette
-    </button>
-  </div>;
+  // ── EDIT VIEW ─────────────────────────────────────────────────────────
+  if(view==="edit"){
+    const rec=recettes.find(x=>x.id===selected);
+    if(!rec){setView("list");return null;}
+    return <div style={{animation:"fadeIn .3s ease"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+        <button onClick={()=>setView("list")} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+        <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Modifier la recette</h2>
+      </div>
+      <div style={{background:C.surface,borderRadius:14,padding:16,border:`1px solid ${C.border}`}}>
+        <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Nature du versement</p>
+        <input type="text" value={eLabel} onChange={e=>setELabel(e.target.value)}
+          style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
+        <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Montant (€)</p>
+        <input type="text" inputMode="decimal" value={eAmount} onChange={e=>setEAmount(e.target.value)}
+          style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
+        <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Date</p>
+        <input type="date" value={eDate} onChange={e=>setEDate(e.target.value)}
+          style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:20,fontSize:14}}/>
+        <button onClick={saveEditFixed}
+          style={{width:"100%",padding:12,background:"linear-gradient(135deg,#7C3AED,#EC4899)",color:"#fff",border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:14,marginBottom:10}}>
+          Enregistrer les modifications
+        </button>
+        {rec.scheduleId&&<p style={{fontSize:11,color:C.sub,textAlign:"center",marginBottom:8}}>Seule cette occurrence sera modifiée</p>}
+        <button onClick={()=>deleteRec(rec.id)}
+          style={{width:"100%",padding:12,background:C.coralLight,color:C.coral,border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:14}}>
+          Supprimer cette recette
+        </button>
+        {rec.scheduleId&&<button onClick={()=>deleteSchedule(rec.scheduleId)}
+          style={{width:"100%",padding:12,background:C.coralLight,color:C.coral,border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:14,marginTop:8}}>
+          Supprimer tout l'échéancier
+        </button>}
+      </div>
+    </div>;
+  }
 
-  const sorted = [...recettes].sort((a,b)=>b.date.localeCompare(a.date));
-  const total = recettes.reduce((s,r)=>s+r.amount,0);
-  const matched = recettes.filter(r=>r.status==="matched").length;
+  // ── ADD VIEW ──────────────────────────────────────────────────────────
+  if(view==="add"){
+    if(!addType) return <div style={{animation:"fadeIn .3s ease"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:24}}>
+        <button onClick={()=>setView("list")} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+        <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Ajouter une recette</h2>
+      </div>
+      <button onClick={()=>setAddType("one")}
+        style={{width:"100%",padding:"18px 16px",background:C.surface,border:`2px solid ${C.indigo}`,borderRadius:14,marginBottom:12,cursor:"pointer",textAlign:"left"}}>
+        <p style={{fontWeight:700,color:C.indigo,fontSize:15,marginBottom:4}}>💸 Recette ponctuelle</p>
+        <p style={{color:C.sub,fontSize:13}}>Un versement unique (remboursement, prime…)</p>
+      </button>
+      <button onClick={()=>setAddType("recurring")}
+        style={{width:"100%",padding:"18px 16px",background:C.surface,border:`2px solid ${C.sage}`,borderRadius:14,cursor:"pointer",textAlign:"left"}}>
+        <p style={{fontWeight:700,color:C.sage,fontSize:15,marginBottom:4}}>🔄 Recette récurrente</p>
+        <p style={{color:C.sub,fontSize:13}}>Versement mensuel régulier (salaire, loyer reçu…)</p>
+      </button>
+    </div>;
+
+    if(addType==="one") return <div style={{animation:"fadeIn .3s ease"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+        <button onClick={()=>setAddType(null)} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+        <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Recette ponctuelle</h2>
+      </div>
+      <input type="text" placeholder="Nature du versement *" value={form.label}
+        onChange={e=>setForm(f=>({...f,label:e.target.value}))}
+        style={{width:"100%",padding:"12px 14px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:10,fontSize:15}}/>
+      <input type="text" inputMode="decimal" placeholder="Montant en € *  ex: 2350,00" value={form.amount}
+        onChange={e=>setForm(f=>({...f,amount:e.target.value}))}
+        style={{width:"100%",padding:"12px 14px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:10,fontSize:15}}/>
+      <input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}
+        style={{width:"100%",padding:"12px 14px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:16,fontSize:15}}/>
+      <button onClick={addOne} disabled={!form.label||!form.amount}
+        style={{width:"100%",padding:14,background:"linear-gradient(135deg,#7C3AED,#EC4899)",color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",opacity:(!form.label||!form.amount)?.4:1}}>
+        Enregistrer
+      </button>
+    </div>;
+
+    if(addType==="recurring"){
+      const[fy,fm]=rForm.dateFrom?rForm.dateFrom.split("-").map(Number):[0,0];
+      const[ty,tm]=rForm.dateTo?rForm.dateTo.split("-").map(Number):[0,0];
+      const nb=rForm.dateFrom&&rForm.dateTo?Math.max(0,(ty-fy)*12+(tm-fm)+1):0;
+      return <div style={{animation:"fadeIn .3s ease"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+          <button onClick={()=>setAddType(null)} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+          <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Recette récurrente</h2>
+        </div>
+        <div style={{background:C.surface,borderRadius:14,padding:16,border:`1px solid ${C.border}`}}>
+          <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Nature du versement</p>
+          <input type="text" placeholder="ex : Salaire" value={rForm.label}
+            onChange={e=>setRForm(f=>({...f,label:e.target.value}))}
+            style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
+          <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Montant mensuel (€)</p>
+          <input type="text" inputMode="decimal" placeholder="ex : 2350,00" value={rForm.amount}
+            onChange={e=>setRForm(f=>({...f,amount:e.target.value}))}
+            style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
+          <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Jour du versement</p>
+          <input type="number" inputMode="numeric" placeholder="ex : 26" value={rForm.day}
+            onChange={e=>setRForm(f=>({...f,day:e.target.value}))}
+            style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}}>
+            <MonthPicker label="Premier versement" value={rForm.dateFrom} onChange={v=>setRForm(f=>({...f,dateFrom:v+"-01"}))}/>
+            <MonthPicker label="Dernier versement" value={rForm.dateTo} onChange={v=>setRForm(f=>({...f,dateTo:v+"-01"}))}/>
+          </div>
+          {rForm.dateFrom&&rForm.dateTo&&<div style={{background:C.indigoLight,borderRadius:8,padding:"10px 12px",marginBottom:10,fontSize:13,color:C.indigo}}>
+            📅 {fmtMonth(rForm.dateFrom.slice(0,7))} → {fmtMonth(rForm.dateTo.slice(0,7))}
+          </div>}
+          {nb>0&&<div style={{background:C.sageLight,borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:13,color:C.sage}}>
+            ✔ {nb} versement{nb>1?"s":""} de {rForm.amount||"…"} €
+          </div>}
+          <button onClick={addRecurring} disabled={!rForm.label||!rForm.amount||!rForm.day||!rForm.dateFrom||!rForm.dateTo}
+            style={{width:"100%",padding:13,background:"linear-gradient(135deg,#059669,#10B981)",color:"#fff",border:"none",borderRadius:10,fontWeight:700,cursor:"pointer",fontSize:15,
+              opacity:(!rForm.label||!rForm.amount||!rForm.day||!rForm.dateFrom||!rForm.dateTo)?.4:1}}>
+            Générer tous les versements
+          </button>
+        </div>
+        {rSchedules.length>0&&<div style={{marginTop:20}}>
+          <p style={{fontSize:13,fontWeight:700,color:C.sub,marginBottom:10,letterSpacing:.5,textTransform:"uppercase"}}>Échéanciers recettes</p>
+          {rSchedules.map(s=><div key={s.id} style={{background:C.surface,borderRadius:12,padding:"12px 14px",marginBottom:8,border:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <p style={{fontWeight:600,color:C.navy,fontSize:13}}>{s.label}</p>
+              <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtAbs(s.amount)} · J{s.day}</p>
+              <p style={{color:C.sage,fontSize:11,marginTop:2}}>{fmtMonth(s.dateFrom.slice(0,7))} → {fmtMonth(s.dateTo.slice(0,7))}</p>
+            </div>
+            <button onClick={()=>deleteSchedule(s.id)}
+              style={{background:C.coralLight,color:C.coral,border:"none",borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+              Suppr.
+            </button>
+          </div>)}
+        </div>}
+      </div>;
+    }
+  }
+
+  // ── LIST VIEW ─────────────────────────────────────────────────────────
+  const sorted=[...recettes].sort((a,b)=>b.date.localeCompare(a.date));
+  const total=recettes.reduce((s,r)=>s+r.amount,0);
+  const matched=recettes.filter(r=>r.status==="matched").length;
 
   return <div style={{animation:"fadeIn .3s ease"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
       <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Recettes</h2>
-      <button onClick={()=>setView("add")} style={{background:"linear-gradient(135deg,#7C3AED,#EC4899)",color:"#fff",border:"none",borderRadius:10,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ Ajouter</button>
+      <button onClick={()=>setView("add")} style={{background:"linear-gradient(135deg,#059669,#10B981)",color:"#fff",border:"none",borderRadius:10,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ Ajouter</button>
     </div>
-    <button onClick={()=>autoMatch(recettes,setRecettes,bank,"income")} style={{width:"100%",padding:"10px",background:C.indigoLight,color:C.indigo,border:`1px solid ${C.border}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:16}}>
+    <button onClick={()=>autoMatch(recettes,setRecettes,bank,"income")}
+      style={{width:"100%",padding:"10px",background:C.sageLight,color:C.sage,border:`1px solid ${C.sage}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:16}}>
       ⚡ Rapprocher automatiquement
     </button>
     {recettes.length>0&&<div style={{background:"linear-gradient(135deg,#059669,#10B981)",borderRadius:14,padding:"14px 16px",marginBottom:16,display:"flex",justifyContent:"space-between"}}>
@@ -972,12 +1181,15 @@ function Recettes({recettes, setRecettes, bank}) {
       <p style={{fontSize:13,marginTop:4}}>Appuyez sur "+ Ajouter" pour commencer.</p>
     </div>}
     {sorted.map(r=>{
-      const linkedBank = r.bankId ? bank.find(b=>b.id===r.bankId) : null;
+      const linkedBank=r.bankId?bank.find(b=>b.id===r.bankId):null;
       return <div key={r.id} style={{background:C.surface,borderRadius:12,padding:14,marginBottom:10,border:`1px solid ${C.border}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
           <div style={{flex:1,minWidth:0}}>
-            <p style={{fontWeight:600,color:C.navy,fontSize:14}}>{r.label}</p>
-            <p style={{color:C.sub,fontSize:12,marginTop:2}}>{fmtDate(r.date)}</p>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+              <p style={{fontWeight:600,color:C.navy,fontSize:14}}>{r.label}</p>
+              {r.type==="recurring"&&<span style={{fontSize:10,background:C.sageLight,color:C.sage,borderRadius:4,padding:"1px 5px"}}>récurrent</span>}
+            </div>
+            <p style={{color:C.sub,fontSize:12}}>{fmtDate(r.date)}</p>
             {linkedBank&&<p style={{fontSize:11,color:C.sage,marginTop:2}}>✔ {linkedBank.label}</p>}
           </div>
           <div style={{textAlign:"right",marginLeft:8}}>
@@ -985,20 +1197,21 @@ function Recettes({recettes, setRecettes, bank}) {
             <div style={{marginTop:4}}><Badge s={r.status}/></div>
           </div>
         </div>
-        <div style={{display:"flex",gap:8,marginTop:10}}>
+        <div style={{display:"flex",gap:6,marginTop:10}}>
+          <button onClick={()=>goToEdit(r.id)}
+            style={{flex:1,padding:"7px",background:C.indigoLight,color:C.indigo,border:"none",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer"}}>✎ Modifier</button>
           <button onClick={()=>{setSelected(r.id);setView("match");}}
-            style={{flex:1,padding:"7px",background:C.indigoLight,color:C.indigo,border:"none",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer"}}>
-            {r.bankId?"Changer le lien":"Lier au relevé"}
+            style={{flex:1,padding:"7px",background:r.bankId?C.sageLight:C.amberLight,color:r.bankId?C.sage:C.amber,border:"none",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+            {r.bankId?"✔ Lié":"Lier"}
           </button>
           {r.bankId&&<button onClick={()=>unlinkRec(r.id)}
             style={{padding:"7px 10px",background:C.amberLight,color:C.amber,border:"none",borderRadius:8,fontSize:12,cursor:"pointer"}}>Délier</button>}
-          <button onClick={()=>deleteRec(r.id)}
-            style={{padding:"7px 10px",background:C.coralLight,color:C.coral,border:"none",borderRadius:8,fontSize:12,cursor:"pointer"}}>✕</button>
         </div>
       </div>;
     })}
   </div>;
 }
+
 
 const TABS=[
   {id:"dashboard",icon:"◉",label:"Accueil"},
@@ -1126,7 +1339,8 @@ function App(){
 
   const handleExportJSON=()=>{
     const schedules=load("schedules",[]);
-    downloadJSON({bank,receipts,bills,recettes,schedules,exportedAt:new Date().toISOString()},"mon-budget-sauvegarde.json");
+    const recSchedules=load("recSchedules",[]);
+    downloadJSON({bank,receipts,bills,recettes,schedules,recSchedules,exportedAt:new Date().toISOString()},"mon-budget-sauvegarde.json");
     setShowExport(false);
   };
 
@@ -1141,6 +1355,7 @@ function App(){
         if(data.bills)setBills(data.bills);
         if(data.schedules)save("schedules",data.schedules);
         if(data.recettes)setRecettes(data.recettes);
+        if(data.recSchedules)save("recSchedules",data.recSchedules);
         alert("Données importées avec succès !");
       }catch{alert("Fichier invalide.");}
     };
