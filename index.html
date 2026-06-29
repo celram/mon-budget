@@ -492,8 +492,7 @@ function Bank({bank,setBank,receipts,bills,recettes=[]}){
 
 // ── Factures fixes ────────────────────────────────────────────────────────
 const CATS=["Énergie","Télécom & Internet","Assurance","Eau","Prêt","Loisirs","École","Impôts","Autre"];
-function Bills({bills,setBills,currentMonth,bank}){
-  const [schedules,setSchedules]=useState(()=>load("schedules",[]));
+function Bills({bills,setBills,currentMonth,bank,schedules,setSchedules}){
   const [view,setView]=useState("list");
   const [editTarget,setEditTarget]=useState(null);
   const [editSchTarget,setEditSchTarget]=useState(null);
@@ -512,8 +511,6 @@ function Bills({bills,setBills,currentMonth,bank}){
   const nowYM=`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`;
   const [form,setForm]=useState({label:"",category:"Autre",amount:"",dateFrom:nowYM,dateTo:nowYM,fixedDay:""});
   const CATS=["Énergie","Télécom & Internet","Assurance","Eau","Prêt","Loisirs","École","Impôts","Autre"];
-
-  useEffect(()=>save("schedules",schedules),[schedules]);
 
   const monthBills=bills.filter(b=>b.date&&b.date.startsWith(currentMonth));
   const total=monthBills.reduce((s,b)=>s+b.amount,0);
@@ -954,7 +951,7 @@ function autoMatch(items, setItems, bank, type) {
 }
 
 // ── Recettes ──────────────────────────────────────────────────────────────
-function Recettes({recettes, setRecettes, bank, currentMonth}) {
+function Recettes({recettes, setRecettes, bank, currentMonth, rSchedules, setRSchedules}) {
   const [view, setView] = useState("list");
   const [selected, setSelected] = useState(null);
   const [addType, setAddType] = useState(null); // null | "one" | "recurring"
@@ -966,8 +963,6 @@ function Recettes({recettes, setRecettes, bank, currentMonth}) {
   const [eLabel, setELabel] = useState("");
   const [eAmount, setEAmount] = useState("");
   const [eDate, setEDate] = useState("");
-  // Schedules récurrentes
-  const [rSchedules, setRSchedules] = useState(()=>load("recSchedules",[]));
   useEffect(()=>save("recSchedules",rSchedules),[rSchedules]);
 
   const fmtMonth = ym => {
@@ -1452,13 +1447,18 @@ function App(){
 
   const importRef=useRef();
 
+  const [schedules,setSchedules]=useState(()=>load("schedules",[]));
+  const [rSchedules,setRSchedules]=useState(()=>load("recSchedules",[]));
+  useEffect(()=>save("schedules",schedules),[schedules]);
+  useEffect(()=>save("recSchedules",rSchedules),[rSchedules]);
+
   const recettesMonth=recettes.filter(r=>r.date&&r.date.startsWith(currentMonth));
   const views={
     dashboard:<Dashboard bank={bankMonth} receipts={receiptsMonth} bills={bills.filter(b=>b.date&&b.date.startsWith(currentMonth))}/>,
     receipts:<Receipts receipts={receipts} setReceipts={setReceipts} bank={bank} setBank={setBank} bills={bills} currentMonth={currentMonth}/>,
     bank:<Bank bank={bankMonth} setBank={setBank} receipts={receiptsMonth} bills={bills} recettes={recettesMonth}/>,
-    bills:<Bills bills={bills} setBills={setBills} currentMonth={currentMonth} bank={bank}/>,
-    recettes:<Recettes recettes={recettes} setRecettes={setRecettes} bank={bank} currentMonth={currentMonth}/>,
+    bills:<Bills bills={bills} setBills={setBills} currentMonth={currentMonth} bank={bank} schedules={schedules} setSchedules={setSchedules}/>,
+    recettes:<Recettes recettes={recettes} setRecettes={setRecettes} bank={bank} currentMonth={currentMonth} rSchedules={rSchedules} setRSchedules={setRSchedules}/>,
   };
 
   return <div style={{maxWidth:430,margin:"0 auto",minHeight:"100dvh",background:C.bg,position:"relative"}}>
