@@ -1,0 +1,1483 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mon Budget">
+<meta name="theme-color" content="#7C3AED">
+<link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9ImciIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPjxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiM3QzNBRUQiLz48c3RvcCBvZmZzZXQ9IjUwJSIgc3RvcC1jb2xvcj0iI0VDNDg5OSIvPjxzdG9wIG9mZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iI0Y5NzMxNiIvPjwvbGluZWFyR3JhZGllbnQ+PC9kZWZzPjxyZWN0IHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiByeD0iMTE1IiBmaWxsPSJ1cmwoI2cpIi8+PHRleHQgeD0iMjU2IiB5PSIzNDAiIGZvbnQtZmFtaWx5PSJTRiBQcm8gRGlzcGxheSxIZWx2ZXRpY2EsQXJpYWwsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIzMDAiIGZvbnQtd2VpZ2h0PSI5MDAiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBvcGFjaXR5PSIwLjk1Ij4kPC90ZXh0Pjwvc3ZnPg==">
+<title>Mon Budget</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{background:#F7F8FC;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',sans-serif;overscroll-behavior:none;}
+  input,select,button{font-family:inherit;}
+  ::-webkit-scrollbar{display:none;}
+  @keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect } = React;
+
+const C = {
+  bg:"#FAF8FF",surface:"#FFFFFF",border:"#EDE9FE",
+  navy:"#1E1040",sub:"#6B7280",
+  indigo:"#7C3AED",indigoLight:"#F5F3FF",
+  sage:"#059669",sageLight:"#ECFDF5",
+  amber:"#D97706",amberLight:"#FFFBEB",
+  coral:"#E11D48",coralLight:"#FFF1F2",
+  grad1:"#7C3AED",grad2:"#EC4899",grad3:"#F97316",
+};
+
+function load(key,def){try{const v=localStorage.getItem(key);return v?JSON.parse(v):def;}catch{return def;}}
+function save(key,val){try{localStorage.setItem(key,JSON.stringify(val));}catch{}}
+
+const INIT_BANK=[];
+const INIT_RECEIPTS=[];
+const INIT_BILLS=[];
+
+const fmt=n=>(n<0?"−":"+")+Math.abs(n).toFixed(2).replace(".",",")+"\u202f€";
+const fmtAbs=n=>n.toFixed(2).replace(".",",")+"\u202f€";
+const fmtDate=d=>{const[y,m,day]=d.split("-");return`${day}/${m}/${y}`;};
+const todayISO=()=>new Date().toISOString().slice(0,10);
+
+function Badge({s}){
+  const map={
+    matched:{bg:C.sageLight,color:C.sage,icon:"✔",label:"Rapproché"},
+    paid:{bg:C.sageLight,color:C.sage,icon:"✔",label:"Payé"},
+    missing:{bg:C.coralLight,color:C.coral,icon:"✕",label:"Manquant"},
+    doubt:{bg:C.amberLight,color:C.amber,icon:"⚠",label:"Incertain"},
+  };
+  const t=map[s]||map.doubt;
+  return <span style={{background:t.bg,color:t.color,borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:600,whiteSpace:"nowrap"}}>{t.icon} {t.label}</span>;
+}
+
+// ── Dashboard ────────────────────────────────────────────────────────────
+function Dashboard({bank,receipts,bills}){
+  const income=bank.filter(b=>b.amount>0).reduce((s,b)=>s+b.amount,0);
+  const expenses=bank.filter(b=>b.amount<0).reduce((s,b)=>s+Math.abs(b.amount),0);
+  const balance=income-expenses;
+  // Lignes bancaires sans justificatif (ni ticket ni facture liés)
+  const unjustified=bank.filter(b=>{
+    if(b.amount>=0)return false;
+    const hasReceipt=receipts.find(r=>r.bankId===b.id);
+    const hasBill=bills.find(f=>f.bankId===b.id);
+    return !hasReceipt&&!hasBill;
+  });
+
+  const alerts=[
+    ...bills.filter(f=>f.status==="missing").map(f=>({type:"coral",msg:`Facture manquante : ${f.label} (${fmtAbs(f.amount)})`})),
+    ...bills.filter(f=>f.status==="doubt").map(f=>({type:"amber",msg:`Incertain : ${f.label} — paiement non confirmé`})),
+    ...receipts.filter(r=>r.status==="missing").map(r=>({type:"amber",msg:`Ticket sans contrepartie : ${r.label} (${fmtAbs(r.amount)})`})),
+    ...unjustified.map(b=>({type:"amber",msg:`Dépense sans justificatif : ${b.label} (${fmtAbs(Math.abs(b.amount))})`})),
+  ];
+
+  // ── Camembert data ──────────────────────────────────────────────────
+  const PIE_COLORS=["#7C3AED","#EC4899","#F97316","#10B981","#F59E0B","#3B82F6","#EF4444","#8B5CF6","#06B6D4","#84CC16"];
+
+  const catTotals={};
+  bills.forEach(b=>{
+    const cat=b.category||"Autre";
+    catTotals[cat]=(catTotals[cat]||0)+b.amount;
+  });
+  const cbTotal=receipts.reduce((s,r)=>s+r.amount,0);
+  if(cbTotal>0) catTotals["Dépenses CB"]=(catTotals["Dépenses CB"]||0)+cbTotal;
+
+  const pieData=Object.entries(catTotals)
+    .map(([name,val])=>({name,val:Math.abs(val)}))
+    .filter(d=>d.val>0)
+    .sort((a,b)=>b.val-a.val);
+  const pieTotal=pieData.reduce((s,d)=>s+d.val,0);
+
+  // Camembert conic-gradient (natif iOS Safari)
+  const PieChart=()=>{
+    if(pieData.length===0)return null;
+    let cum=0;
+    const stops=pieData.map((d,i)=>{
+      const pct=d.val/pieTotal*100;
+      const s=`${PIE_COLORS[i%PIE_COLORS.length]} ${cum.toFixed(1)}% ${(cum+pct).toFixed(1)}%`;
+      cum+=pct;
+      return s;
+    }).join(", ");
+    const gradient=`conic-gradient(${stops})`;
+    return <div style={{display:"flex",alignItems:"center",gap:20}}>
+      <div style={{position:"relative",flexShrink:0}}>
+        <div style={{width:140,height:140,borderRadius:"50%",background:gradient}}/>
+        <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",
+          width:64,height:64,borderRadius:"50%",background:C.surface,
+          display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+          <p style={{fontSize:9,color:C.sub,marginBottom:1}}>Total</p>
+          <p style={{fontSize:11,fontWeight:700,color:C.navy}}>{fmtAbs(pieTotal)}</p>
+        </div>
+      </div>
+      <div style={{flex:1,minWidth:0}}>
+        {pieData.map((d,i)=><div key={d.name} style={{display:"flex",alignItems:"center",gap:7,marginBottom:8}}>
+          <div style={{width:9,height:9,borderRadius:"50%",background:PIE_COLORS[i%PIE_COLORS.length],flexShrink:0}}/>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{fontSize:12,fontWeight:600,color:C.navy,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</p>
+            <p style={{fontSize:10,color:C.sub}}>{fmtAbs(d.val)} · {Math.round(d.val/pieTotal*100)}%</p>
+          </div>
+        </div>)}
+      </div>
+    </div>;
+  };
+
+  return <div style={{animation:"fadeIn .3s ease"}}>
+    {/* Hero */}
+    <div style={{background:"linear-gradient(135deg,#7C3AED 0%,#EC4899 60%,#F97316 100%)",borderRadius:20,padding:"28px 24px 24px",marginBottom:20,position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",top:-30,right:-30,width:120,height:120,borderRadius:"50%",background:"rgba(255,255,255,.12)"}}/>
+      <div style={{position:"absolute",bottom:-20,left:40,width:80,height:80,borderRadius:"50%",background:"rgba(255,255,255,.08)"}}/>
+      <p style={{color:"rgba(255,255,255,.7)",fontSize:13,marginBottom:6,position:"relative"}}>Solde estimé</p>
+      <p style={{color:"#fff",fontSize:36,fontWeight:700,letterSpacing:-1,position:"relative"}}>{fmtAbs(balance)}</p>
+      <div style={{display:"flex",gap:20,marginTop:20,position:"relative"}}>
+        <div><p style={{color:"rgba(255,255,255,.6)",fontSize:11,marginBottom:2}}>ENTRÉES</p><p style={{color:"#fff",fontWeight:700,fontSize:16}}>+{fmtAbs(income)}</p></div>
+        <div style={{width:1,background:"rgba(255,255,255,.2)"}}/>
+        <div><p style={{color:"rgba(255,255,255,.6)",fontSize:11,marginBottom:2}}>SORTIES</p><p style={{color:"#fff",fontWeight:700,fontSize:16}}>−{fmtAbs(expenses)}</p></div>
+      </div>
+    </div>
+
+    {/* Compteurs */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:20}}>
+      {[
+        {label:"Rapprochés",val:receipts.filter(r=>r.status==="matched").length+bills.filter(b=>b.status==="paid").length,color:C.sage,bg:C.sageLight},
+        {label:"Manquants",val:alerts.filter(a=>a.type==="coral").length,color:C.coral,bg:C.coralLight},
+        {label:"À vérifier",val:alerts.filter(a=>a.type==="amber").length,color:C.amber,bg:C.amberLight},
+      ].map(s=><div key={s.label} style={{background:s.bg,borderRadius:14,padding:"14px 12px",textAlign:"center"}}>
+        <p style={{fontSize:26,fontWeight:800,color:s.color,lineHeight:1}}>{s.val}</p>
+        <p style={{fontSize:11,color:s.color,marginTop:4,fontWeight:600}}>{s.label}</p>
+      </div>)}
+    </div>
+
+    {/* Alertes */}
+    {alerts.length>0&&<div style={{marginBottom:20}}>
+      <p style={{fontSize:13,fontWeight:700,color:C.sub,marginBottom:10,letterSpacing:.5,textTransform:"uppercase"}}>Alertes</p>
+      {alerts.map((a,i)=><div key={i} style={{background:a.type==="coral"?C.coralLight:C.amberLight,borderLeft:`3px solid ${a.type==="coral"?C.coral:C.amber}`,borderRadius:10,padding:"10px 14px",marginBottom:8,fontSize:13,color:C.navy}}>
+        {a.type==="coral"?"✕ ":"⚠ "}{a.msg}
+      </div>)}
+    </div>}
+
+    {/* Camembert */}
+    {pieData.length>0&&<div style={{background:C.surface,borderRadius:16,padding:"16px",marginBottom:20,border:`1px solid ${C.border}`}}>
+      <p style={{fontSize:13,fontWeight:700,color:C.sub,marginBottom:14,letterSpacing:.5,textTransform:"uppercase"}}>Répartition des dépenses</p>
+      <PieChart/>
+    </div>}
+
+
+  </div>;
+}
+
+function Receipts({receipts,setReceipts,bank,setBank}){
+  const [view,setView]=useState("list");
+  const [selected,setSelected]=useState(null);
+  const [form,setForm]=useState({label:"",amount:"",date:todayISO(),photo:null});
+  const [photoPreview,setPhotoPreview]=useState(null);
+  const [eLabel,setELabel]=useState("");
+  const [eAmount,setEAmount]=useState("");
+  const [eDate,setEDate]=useState("");
+  const [ePhoto,setEPhoto]=useState(null);
+  const [ePreview,setEPreview]=useState(null);
+  const fileRef=useRef();
+  const editFileRef=useRef();
+
+  const findCandidates=(receipt)=>{
+    const rDate=new Date(receipt.date);
+    return bank.filter(b=>{
+      if(b.amount>=0)return false;
+      if(Math.abs(Math.abs(b.amount)-receipt.amount)>0.01)return false;
+      const diffDays=Math.abs((new Date(b.date)-rDate)/(1000*60*60*24));
+      return diffDays<=10;
+    });
+  };
+
+  const handlePhoto=e=>{
+    const file=e.target.files[0];if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{setPhotoPreview(ev.target.result);setForm(f=>({...f,photo:ev.target.result}));};
+    reader.readAsDataURL(file);
+  };
+
+  const handleEditPhoto=e=>{
+    const file=e.target.files[0];if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{setEPreview(ev.target.result);setEPhoto(ev.target.result);};
+    reader.readAsDataURL(file);
+  };
+
+  const goToDetail=(id)=>{setSelected(id);setView("detail");};
+
+  const goToEdit=(id)=>{
+    const r=receipts.find(x=>x.id===id);
+    if(!r)return;
+    setELabel(r.label);setEAmount(String(r.amount));setEDate(r.date);
+    setEPhoto(r.photo||null);setEPreview(r.photo||null);
+    setSelected(id);setView("edit");
+  };
+
+  const goToMatch=(id)=>{setSelected(id);setView("match");};
+
+  const saveEdit=()=>{
+    setReceipts(list=>list.map(x=>x.id===selected
+      ?{...x,label:eLabel,amount:parseFloat(eAmount.replace(",",".")),date:eDate,photo:ePhoto}:x));
+    setView("detail");
+  };
+
+  const add=()=>{
+    if(!form.label||!form.amount)return;
+    const newR={id:"r"+Date.now(),date:form.date,label:form.label,
+      amount:parseFloat(form.amount.replace(",",".")),status:"missing",bankId:null,photo:form.photo||null};
+    const candidates=findCandidates(newR);
+    if(candidates.length===1){newR.status="matched";newR.bankId=candidates[0].id;}
+    setReceipts(r=>[newR,...r]);
+    setForm({label:"",amount:"",date:todayISO(),photo:null});
+    setPhotoPreview(null);
+    if(candidates.length>1){setSelected(newR.id);setView("match");}
+    else setView("list");
+  };
+
+  const reset=()=>{setForm({label:"",amount:"",date:todayISO(),photo:null});setPhotoPreview(null);setView("list");};
+
+  const linkToBankLine=(receiptId,bankId)=>{
+    setReceipts(list=>list.map(r=>r.id===receiptId?{...r,status:"matched",bankId}:r));
+    setSelected(receiptId);setView("detail");
+  };
+
+  const unlinkReceipt=(receiptId)=>{
+    setReceipts(list=>list.map(r=>r.id===receiptId?{...r,status:"missing",bankId:null}:r));
+  };
+
+  const deleteReceipt=(id)=>{
+    setReceipts(list=>list.filter(x=>x.id!==id));
+    setSelected(null);setView("list");
+  };
+
+  // ── MATCH VIEW ────────────────────────────────────────────────────────
+  if(view==="match"){
+    const r=receipts.find(x=>x.id===selected);
+    const candidates=r?findCandidates(r):[];
+    const others=bank.filter(b=>b.amount<0&&!candidates.find(c=>c.id===b.id));
+    return <div style={{animation:"fadeIn .3s ease"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+        <button onClick={()=>setView(selected?"detail":"list")} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+        <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Lier au relevé</h2>
+      </div>
+      {r&&<div style={{background:C.indigoLight,borderRadius:12,padding:"11px 14px",marginBottom:16,fontSize:13,color:C.indigo}}>
+        Ticket : <strong>{r.label}</strong> — {fmtAbs(r.amount)} le {fmtDate(r.date)}
+      </div>}
+      {candidates.length>0&&<>
+        <p style={{fontSize:12,fontWeight:700,color:C.sage,marginBottom:8,textTransform:"uppercase",letterSpacing:.5}}>✔ Correspondances probables</p>
+        {candidates.map(b=><button key={b.id} onClick={()=>linkToBankLine(selected,b.id)}
+          style={{width:"100%",textAlign:"left",background:C.sageLight,border:`1px solid ${C.sage}`,borderRadius:10,padding:"11px 14px",marginBottom:8,cursor:"pointer"}}>
+          <p style={{fontWeight:600,color:C.navy,fontSize:13}}>{b.label}</p>
+          <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtDate(b.date)} · {fmtAbs(Math.abs(b.amount))}</p>
+        </button>)}
+      </>}
+      {others.length>0&&<>
+        <p style={{fontSize:12,fontWeight:700,color:C.sub,marginBottom:8,marginTop:12,textTransform:"uppercase",letterSpacing:.5}}>Autres lignes bancaires</p>
+        {others.slice(0,15).map(b=><button key={b.id} onClick={()=>linkToBankLine(selected,b.id)}
+          style={{width:"100%",textAlign:"left",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 14px",marginBottom:8,cursor:"pointer"}}>
+          <p style={{fontWeight:600,color:C.navy,fontSize:13}}>{b.label}</p>
+          <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtDate(b.date)} · {fmtAbs(Math.abs(b.amount))}</p>
+        </button>)}
+      </>}
+      <button onClick={()=>setView(selected?"detail":"list")}
+        style={{width:"100%",padding:11,background:C.border,color:C.sub,border:"none",borderRadius:10,fontSize:13,cursor:"pointer",marginTop:4}}>
+        Ignorer pour l'instant
+      </button>
+    </div>;
+  }
+
+  // ── EDIT VIEW ─────────────────────────────────────────────────────────
+  if(view==="edit"){
+    return <div style={{animation:"fadeIn .3s ease"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+        <button onClick={()=>setView("detail")} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+        <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Modifier le ticket</h2>
+      </div>
+      <div onClick={()=>editFileRef.current.click()} style={{border:`2px dashed ${ePreview?C.sage:C.indigo}`,borderRadius:14,marginBottom:12,overflow:"hidden",cursor:"pointer",background:ePreview?"transparent":C.indigoLight,minHeight:100,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:6}}>
+        {ePreview
+          ?<img src={ePreview} alt="ticket" style={{width:"100%",maxHeight:180,objectFit:"cover"}}/>
+          :<><span style={{fontSize:28}}>📷</span><p style={{color:C.indigo,fontSize:13}}>Changer la photo</p></>
+        }
+        <input ref={editFileRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleEditPhoto}/>
+      </div>
+      {ePreview&&<button onClick={()=>{setEPreview(null);setEPhoto(null);}} style={{width:"100%",padding:"7px",background:C.border,color:C.sub,border:"none",borderRadius:8,fontSize:12,cursor:"pointer",marginBottom:12}}>Supprimer la photo</button>}
+      <p style={{fontSize:12,color:C.sub,marginBottom:5}}>Nom du magasin</p>
+      <input type="text" value={eLabel} onChange={e=>setELabel(e.target.value)}
+        style={{width:"100%",padding:"11px 13px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:10,fontSize:15}}/>
+      <p style={{fontSize:12,color:C.sub,marginBottom:5}}>Montant (€)</p>
+      <input type="text" inputMode="decimal" value={eAmount} onChange={e=>setEAmount(e.target.value)}
+        style={{width:"100%",padding:"11px 13px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:10,fontSize:15}}/>
+      <p style={{fontSize:12,color:C.sub,marginBottom:5}}>Date</p>
+      <input type="date" value={eDate} onChange={e=>setEDate(e.target.value)}
+        style={{width:"100%",padding:"11px 13px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:16,fontSize:15}}/>
+      <button onClick={saveEdit} disabled={!eLabel||!eAmount}
+        style={{width:"100%",padding:13,background:C.indigo,color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",opacity:(!eLabel||!eAmount)?.4:1}}>
+        Enregistrer les modifications
+      </button>
+    </div>;
+  }
+
+  // ── DETAIL VIEW ───────────────────────────────────────────────────────
+  if(view==="detail"){
+    const r=receipts.find(x=>x.id===selected);
+    if(!r) return null;
+    const linkedBank=r.bankId?bank.find(b=>b.id===r.bankId):null;
+    return <div style={{animation:"fadeIn .3s ease"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <button onClick={()=>{setView("list");setSelected(null);}} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+          <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>{r.label}</h2>
+        </div>
+        <button onClick={()=>goToEdit(r.id)} style={{background:C.indigoLight,color:C.indigo,border:"none",borderRadius:8,padding:"6px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>✎ Modifier</button>
+      </div>
+      {r.photo
+        ?<img src={r.photo} alt="ticket" style={{width:"100%",borderRadius:14,marginBottom:16,maxHeight:340,objectFit:"cover"}}/>
+        :<div style={{background:C.border,borderRadius:14,height:120,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:16,color:C.sub,fontSize:13}}>Pas de photo</div>
+      }
+      <div style={{background:C.surface,borderRadius:14,padding:16,border:`1px solid ${C.border}`,marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><span style={{color:C.sub,fontSize:13}}>Magasin</span><span style={{fontWeight:600,color:C.navy}}>{r.label}</span></div>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><span style={{color:C.sub,fontSize:13}}>Date</span><span style={{fontWeight:600,color:C.navy}}>{fmtDate(r.date)}</span></div>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><span style={{color:C.sub,fontSize:13}}>Montant</span><span style={{fontWeight:700,color:C.navy,fontSize:16}}>{fmtAbs(r.amount)}</span></div>
+        <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.sub,fontSize:13}}>Statut</span><Badge s={r.status}/></div>
+      </div>
+      {linkedBank&&<div style={{background:C.sageLight,borderRadius:12,padding:"11px 14px",marginBottom:12,fontSize:13}}>
+        <p style={{color:C.sage,fontWeight:700,marginBottom:3}}>✔ Lié à la ligne bancaire</p>
+        <p style={{color:C.navy}}>{linkedBank.label}</p>
+        <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtDate(linkedBank.date)} · {fmtAbs(Math.abs(linkedBank.amount))}</p>
+      </div>}
+      <div style={{display:"flex",gap:8,marginBottom:8}}>
+        <button onClick={()=>goToMatch(r.id)}
+          style={{flex:1,padding:11,background:C.indigoLight,color:C.indigo,border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:13}}>
+          {r.bankId?"Changer le lien":"Lier au relevé"}
+        </button>
+        {r.bankId&&<button onClick={()=>{unlinkReceipt(r.id);}}
+          style={{flex:1,padding:11,background:C.amberLight,color:C.amber,border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:13}}>
+          Délier
+        </button>}
+      </div>
+      <button onClick={()=>deleteReceipt(r.id)}
+        style={{width:"100%",padding:11,background:C.coralLight,color:C.coral,border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:13}}>
+        Supprimer ce ticket
+      </button>
+    </div>;
+  }
+
+  // ── ADD VIEW ──────────────────────────────────────────────────────────
+  if(view==="add") return <div style={{animation:"fadeIn .3s ease"}}>
+    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+      <button onClick={reset} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+      <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Ajouter une dépense</h2>
+    </div>
+    <div onClick={()=>fileRef.current.click()} style={{border:`2px dashed ${photoPreview?C.sage:C.indigo}`,borderRadius:14,marginBottom:16,overflow:"hidden",cursor:"pointer",background:photoPreview?"transparent":C.indigoLight,minHeight:140,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:8}}>
+      {photoPreview
+        ?<img src={photoPreview} alt="ticket" style={{width:"100%",maxHeight:200,objectFit:"cover"}}/>
+        :<><span style={{fontSize:36}}>📷</span><p style={{color:C.indigo,fontWeight:600,fontSize:14}}>Prendre une photo du ticket</p><p style={{color:C.sub,fontSize:12}}>optionnel</p></>
+      }
+      <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={handlePhoto}/>
+    </div>
+    {photoPreview&&<button onClick={()=>{setPhotoPreview(null);setForm(f=>({...f,photo:null}));}} style={{width:"100%",padding:"8px",background:C.border,color:C.sub,border:"none",borderRadius:8,fontSize:12,cursor:"pointer",marginBottom:12}}>Supprimer la photo</button>}
+    <input type="text" placeholder="Nom du magasin *" value={form.label} onChange={e=>setForm(f=>({...f,label:e.target.value}))}
+      style={{width:"100%",padding:"12px 14px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:10,fontSize:15}}/>
+    <input type="text" inputMode="decimal" placeholder="Montant en € *  ex: 43,20" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))}
+      style={{width:"100%",padding:"12px 14px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:10,fontSize:15}}/>
+    <input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}
+      style={{width:"100%",padding:"12px 14px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:16,fontSize:15}}/>
+    <button onClick={add} disabled={!form.label||!form.amount}
+      style={{width:"100%",padding:14,background:C.indigo,color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",opacity:(!form.label||!form.amount)?.4:1}}>
+      Enregistrer la dépense
+    </button>
+  </div>;
+
+  // ── LIST VIEW ─────────────────────────────────────────────────────────
+  return <div style={{animation:"fadeIn .3s ease"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+      <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Dépenses variables</h2>
+      <button onClick={()=>setView("add")} style={{background:"linear-gradient(135deg,#7C3AED,#EC4899)",color:"#fff",border:"none",borderRadius:10,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ Ajouter</button>
+    </div>
+    <button onClick={()=>autoMatch(receipts,setReceipts,bank,"expense")} style={{width:"100%",padding:"10px",background:C.indigoLight,color:C.indigo,border:`1px solid ${C.border}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:16}}>⚡ Rapprocher automatiquement</button>
+    {receipts.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.sub}}>
+      <div style={{fontSize:40,marginBottom:12}}>🧾</div>
+      <p style={{fontSize:14}}>Aucun ticket enregistré.</p>
+      <p style={{fontSize:13,marginTop:4}}>Appuyez sur "+ Ajouter" pour commencer.</p>
+    </div>}
+    {[...receipts].sort((a,b)=>b.date.localeCompare(a.date)).map(r=><div key={r.id} onClick={()=>goToDetail(r.id)} style={{background:C.surface,borderRadius:12,padding:14,marginBottom:10,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",gap:12,alignItems:"center"}}>
+      {r.photo
+        ?<img src={r.photo} alt="" style={{width:48,height:48,borderRadius:8,objectFit:"cover",flexShrink:0}}/>
+        :<div style={{width:48,height:48,borderRadius:8,background:C.indigoLight,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🧾</div>
+      }
+      <div style={{flex:1,minWidth:0}}>
+        <p style={{fontWeight:600,color:C.navy,fontSize:14}}>{r.label}</p>
+        <p style={{color:C.sub,fontSize:12,marginTop:2}}>{fmtDate(r.date)}</p>
+      </div>
+      <div style={{textAlign:"right"}}>
+        <p style={{fontWeight:700,color:C.navy,fontSize:15}}>{fmtAbs(r.amount)}</p>
+        <div style={{marginTop:4}}><Badge s={r.status}/></div>
+      </div>
+    </div>)}
+  </div>;
+}
+
+// ── Relevé bancaire ───────────────────────────────────────────────────────
+function Bank({bank,setBank,receipts,bills,recettes=[]}){
+  const fileRef=useRef();
+  const handleCSV=e=>{
+    const file=e.target.files[0]; if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      const lines=ev.target.result.split("\n").filter(Boolean);
+      const parsed=[];
+      lines.forEach((l,i)=>{
+        const cols=l.split(";");
+        const rawDate=cols[0]?.trim()||"";
+        const rawAmount=cols[1]?.trim()||"";
+        const rawLabel=cols[4]?.trim()||cols[2]?.trim()||"Transaction";
+        const amount=parseFloat(rawAmount.replace(",","."))||0;
+        if(!rawDate||!rawDate.match(/\d{2}\/\d{2}\/\d{4}/)||amount===0)return;
+        const[d,m,y]=rawDate.split("/");
+        const isoDate=`${y}-${m}-${d}`;
+        parsed.push({id:"imp"+Date.now()+i,date:isoDate,label:rawLabel,amount});
+      });
+      if(parsed.length)setBank(b=>[...parsed,...b]);
+    };
+    reader.readAsText(file,"UTF-8");
+    e.target.value="";
+  };
+  return <div style={{animation:"fadeIn .3s ease"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+      <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Relevé bancaire</h2>
+      <button onClick={()=>fileRef.current.click()} style={{background:"linear-gradient(135deg,#7C3AED,#EC4899)",color:"#fff",border:"none",borderRadius:10,padding:"9px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>Importer CSV</button>
+      <input ref={fileRef} type="file" accept=".csv,.txt" style={{display:"none"}} onChange={handleCSV}/>
+    </div>
+    <div style={{background:C.indigoLight,borderRadius:12,padding:"11px 14px",marginBottom:16,fontSize:12,color:C.indigo,lineHeight:1.6}}>
+      <strong>Format CSV :</strong> date;libellé;montant<br/>
+      <span style={{opacity:.7}}>ex : 02/06/2026;EDF;-87.40</span>
+    </div>
+    {bank.map(b=>{
+      const rm=receipts.find(r=>r.bankId===b.id);
+      const bm=bills.find(f=>f.bankId===b.id);
+      const rec=recettes.find(r=>r.bankId===b.id);
+      const match=rm||bm||rec;
+      const amountColor = b.amount>0
+        ? "#2563EB"  // recette → bleu
+        : match ? C.navy : C.coral; // dépense rapprochée → noir, non rapprochée → rouge
+      return <div key={b.id} style={{background:C.surface,borderRadius:12,padding:"12px 14px",marginBottom:8,border:`1px solid ${C.border}`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+          <div style={{flex:1,minWidth:0}}>
+            <p style={{fontWeight:600,color:C.navy,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.label}</p>
+            <p style={{color:C.sub,fontSize:11,marginTop:3}}>{fmtDate(b.date)}</p>
+            {match&&<p style={{fontSize:11,color:C.sage,marginTop:3}}>✔ {rm?`Ticket : ${rm.label}`:rec?`Recette : ${rec.label}`:`Facture : ${bm.label}`}</p>}
+          </div>
+          <div style={{textAlign:"right",marginLeft:12}}>
+            <p style={{fontWeight:700,fontSize:14,color:amountColor}}>{fmt(b.amount)}</p>
+            {match&&<div style={{marginTop:4}}><Badge s="matched"/></div>}
+          </div>
+        </div>
+      </div>;
+    })}
+  </div>;
+}
+
+// ── Factures fixes ────────────────────────────────────────────────────────
+const CATS=["Énergie","Télécom & Internet","Assurance","Eau","Prêt","Loisirs","École","Impôts","Autre"];
+function Bills({bills,setBills,currentMonth,bank}){
+  const [schedules,setSchedules]=useState(()=>load("schedules",[]));
+  const [view,setView]=useState("list");
+  const [selected,setSelected]=useState(null);
+  const [editTarget,setEditTarget]=useState(null);
+  const [editSchTarget,setEditSchTarget]=useState(null);
+  // Occurrence edit
+  const [eDate,setEDate]=useState("");
+  const [eAmt,setEAmt]=useState("");
+  // Schedule edit
+  const [sLabel,setSLabel]=useState("");
+  const [sCategory,setSCategory]=useState("Autre");
+  const [sAmount,setSAmount]=useState("");
+  const [sFixedDay,setSFixedDay]=useState("");
+  const [sDateFrom,setSDateFrom]=useState("");
+  const [sDateTo,setSDateTo]=useState("");
+  const [form,setForm]=useState({label:"",category:"Autre",amount:"",dateFrom:"",dateTo:"",fixedDay:""});
+  const CATS=["Énergie","Télécom & Internet","Assurance","Eau","Prêt","Loisirs","École","Impôts","Autre"];
+  const nowYM=`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`;
+
+  useEffect(()=>save("schedules",schedules),[schedules]);
+
+  const monthBills=bills.filter(b=>b.date&&b.date.startsWith(currentMonth));
+  const total=monthBills.reduce((s,b)=>s+b.amount,0);
+
+  const fmtMonth=ym=>{
+    if(!ym||ym.length<7)return "";
+    const[y,m]=ym.split("-");
+    return new Date(+y,+m-1,1).toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+  };
+
+  const MonthPicker=({label,value,onChange})=>{
+    const opts=[];
+    for(let y=2026;y<=2035;y++){
+      const startM=(y===2026?6:1);
+      for(let m=startM;m<=12;m++){
+        const val=`${y}-${String(m).padStart(2,"0")}`;
+        const lbl=new Date(y,m-1,1).toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+        opts.push({val,lbl});
+      }
+    }
+    return <div>
+      <p style={{fontSize:12,color:C.sub,marginBottom:6}}>{label}</p>
+      <select value={value} onChange={e=>onChange(e.target.value)}
+        style={{width:"100%",padding:"11px 10px",borderRadius:8,border:`1px solid ${C.border}`,fontSize:14,background:"#fff",color:C.navy}}>
+        <option value="">-- Choisir --</option>
+        {opts.map(o=><option key={o.val} value={o.val}>{o.lbl}</option>)}
+      </select>
+    </div>;
+  };
+
+  const calcNb=(from,to)=>{
+    if(!from||!to)return 0;
+    const[fy,fm]=from.split("-").map(Number);
+    const[ty,tm]=to.split("-").map(Number);
+    return Math.max(0,(ty-fy)*12+(tm-fm)+1);
+  };
+
+  const generateOccurrences=(sch)=>{
+    const occs=[];
+    const[fy,fm]=sch.dateFrom.slice(0,7).split("-").map(Number);
+    const[ty,tm]=sch.dateTo.slice(0,7).split("-").map(Number);
+    let y=fy,m=fm;
+    while(y<ty||(y===ty&&m<=tm)){
+      const dd=String(sch.fixedDay).padStart(2,"0");
+      const mm=String(m).padStart(2,"0");
+      occs.push({id:"b"+Date.now()+Math.random().toString(36).slice(2),
+        scheduleId:sch.id,label:sch.label,category:sch.category,
+        amount:sch.amount,date:`${y}-${mm}-${dd}`,status:"missing",bankId:null});
+      m++;if(m>12){m=1;y++;}
+    }
+    return occs;
+  };
+
+  const addSchedule=()=>{
+    if(!form.label||!form.amount||!form.dateFrom||!form.dateTo||!form.fixedDay)return;
+    const sch={id:"sch"+Date.now(),label:form.label,category:form.category,
+      amount:parseFloat(form.amount.replace(",",".")),
+      dateFrom:form.dateFrom,dateTo:form.dateTo,fixedDay:parseInt(form.fixedDay)};
+    setSchedules(s=>[...s,sch]);
+    setBills(b=>[...b,...generateOccurrences(sch)]);
+    setForm({label:"",category:"Autre",amount:"",dateFrom:nowYM,dateTo:nowYM,fixedDay:""});
+    setView("list");
+  };
+
+  const deleteSchedule=(schId)=>{
+    setSchedules(s=>s.filter(x=>x.id!==schId));
+    setBills(b=>b.filter(x=>x.scheduleId!==schId));
+  };
+
+  const goToEditSchedule=(schId)=>{
+    const s=schedules.find(x=>x.id===schId);
+    if(!s)return;
+    setSLabel(s.label);setSCategory(s.category);setSAmount(String(s.amount));
+    setSFixedDay(String(s.fixedDay));setSDateFrom(s.dateFrom.slice(0,7));setSDateTo(s.dateTo.slice(0,7));
+    setEditSchTarget(schId);setView("editSchedule");
+  };
+
+  const saveSchedule=()=>{
+    if(!sLabel||!sAmount||!sDateFrom||!sDateTo||!sFixedDay)return;
+    const newSch={id:editSchTarget,label:sLabel,category:sCategory,
+      amount:parseFloat(sAmount.replace(",",".")),
+      dateFrom:sDateFrom+"-01",dateTo:sDateTo+"-01",fixedDay:parseInt(sFixedDay)};
+    setSchedules(s=>s.map(x=>x.id===editSchTarget?newSch:x));
+    setBills(b=>[...b.filter(x=>x.scheduleId!==editSchTarget),...generateOccurrences(newSch)]);
+    setEditSchTarget(null);setView("addSchedule");
+  };
+
+  const goToDetail=(id)=>{setSelected(id);setView("detail");};
+
+  const goToEditOccurrence=(id)=>{
+    const occ=bills.find(b=>b.id===id);
+    if(!occ)return;
+    setEDate(occ.date);setEAmt(String(occ.amount));
+    setEditTarget(id);setView("editOccurrence");
+  };
+
+  const saveOccurrence=()=>{
+    setBills(b=>b.map(x=>x.id===editTarget
+      ?{...x,date:eDate,amount:parseFloat(eAmt.replace(",","."))}:x));
+    setEditTarget(null);setView("list");
+  };
+
+  const deleteOccurrence=(id)=>{
+    setBills(b=>b.filter(x=>x.id!==id));
+    setSelected(null);setView("list");
+  };
+
+  const linkToBank=(billId,bankId)=>{
+    setBills(b=>b.map(x=>x.id===billId?{...x,status:"paid",bankId}:x));
+    setView("detail");
+  };
+
+  const unlinkBill=(id)=>{
+    setBills(b=>b.map(x=>x.id===id?{...x,status:"missing",bankId:null}:x));
+  };
+
+  const findCandidates=(bill)=>{
+    const bDate=new Date(bill.date);
+    return bank.filter(b=>{
+      if(b.amount>=0)return false;
+      if(Math.abs(Math.abs(b.amount)-bill.amount)>0.01)return false;
+      return Math.abs((new Date(b.date)-bDate)/(1000*60*60*24))<=10;
+    });
+  };
+
+  // ── MATCH VIEW ────────────────────────────────────────────────────────
+  if(view==="match"){
+    const bill=bills.find(x=>x.id===selected);
+    const candidates=bill?findCandidates(bill):[];
+    const others=bank.filter(b=>b.amount<0&&!candidates.find(c=>c.id===b.id));
+    return <div style={{animation:"fadeIn .3s ease"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+        <button onClick={()=>setView("detail")} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+        <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Lier au relevé</h2>
+      </div>
+      {bill&&<div style={{background:C.indigoLight,borderRadius:12,padding:"11px 14px",marginBottom:16,fontSize:13,color:C.indigo}}>
+        <strong>{bill.label}</strong> — {fmtAbs(bill.amount)} le {fmtDate(bill.date)}
+      </div>}
+      {candidates.length>0&&<>
+        <p style={{fontSize:12,fontWeight:700,color:C.sage,marginBottom:8,textTransform:"uppercase",letterSpacing:.5}}>✔ Correspondances probables</p>
+        {candidates.map(b=><button key={b.id} onClick={()=>linkToBank(selected,b.id)}
+          style={{width:"100%",textAlign:"left",background:C.sageLight,border:`1px solid ${C.sage}`,borderRadius:10,padding:"11px 14px",marginBottom:8,cursor:"pointer"}}>
+          <p style={{fontWeight:600,color:C.navy,fontSize:13}}>{b.label}</p>
+          <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtDate(b.date)} · {fmtAbs(Math.abs(b.amount))}</p>
+        </button>)}
+      </>}
+      {others.length>0&&<>
+        <p style={{fontSize:12,fontWeight:700,color:C.sub,marginBottom:8,marginTop:12,textTransform:"uppercase",letterSpacing:.5}}>Autres lignes bancaires</p>
+        {others.slice(0,15).map(b=><button key={b.id} onClick={()=>linkToBank(selected,b.id)}
+          style={{width:"100%",textAlign:"left",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 14px",marginBottom:8,cursor:"pointer"}}>
+          <p style={{fontWeight:600,color:C.navy,fontSize:13}}>{b.label}</p>
+          <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtDate(b.date)} · {fmtAbs(Math.abs(b.amount))}</p>
+        </button>)}
+      </>}
+      <button onClick={()=>setView("detail")} style={{width:"100%",padding:11,background:C.border,color:C.sub,border:"none",borderRadius:10,fontSize:13,cursor:"pointer",marginTop:4}}>
+        Ignorer pour l'instant
+      </button>
+    </div>;
+  }
+
+  // ── DETAIL VIEW ───────────────────────────────────────────────────────
+  if(view==="detail"){
+    const bill=bills.find(x=>x.id===selected);
+    if(!bill){setView("list");return null;}
+    const linkedBank=bill.bankId?bank.find(b=>b.id===bill.bankId):null;
+    return <div style={{animation:"fadeIn .3s ease"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <button onClick={()=>{setSelected(null);setView("list");}} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+          <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>{bill.label}</h2>
+        </div>
+        <button onClick={()=>goToEditOccurrence(bill.id)} style={{background:C.indigoLight,color:C.indigo,border:"none",borderRadius:8,padding:"6px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>✎ Modifier</button>
+      </div>
+      <div style={{background:C.surface,borderRadius:14,padding:16,border:`1px solid ${C.border}`,marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><span style={{color:C.sub,fontSize:13}}>Libellé</span><span style={{fontWeight:600,color:C.navy}}>{bill.label}</span></div>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><span style={{color:C.sub,fontSize:13}}>Catégorie</span><span style={{fontWeight:600,color:C.navy}}>{bill.category}</span></div>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><span style={{color:C.sub,fontSize:13}}>Date</span><span style={{fontWeight:600,color:C.navy}}>{fmtDate(bill.date)}</span></div>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><span style={{color:C.sub,fontSize:13}}>Montant</span><span style={{fontWeight:700,color:C.navy,fontSize:16}}>{fmtAbs(bill.amount)}</span></div>
+        <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.sub,fontSize:13}}>Statut</span><Badge s={bill.status}/></div>
+      </div>
+      {linkedBank&&<div style={{background:C.sageLight,borderRadius:12,padding:"11px 14px",marginBottom:12,fontSize:13}}>
+        <p style={{color:C.sage,fontWeight:700,marginBottom:3}}>✔ Lié à la ligne bancaire</p>
+        <p style={{color:C.navy}}>{linkedBank.label}</p>
+        <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtDate(linkedBank.date)} · {fmtAbs(Math.abs(linkedBank.amount))}</p>
+      </div>}
+      <div style={{display:"flex",gap:8,marginBottom:8}}>
+        <button onClick={()=>setView("match")}
+          style={{flex:1,padding:11,background:C.indigoLight,color:C.indigo,border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:13}}>
+          {bill.bankId?"Changer le lien":"Lier au relevé"}
+        </button>
+        {bill.bankId&&<button onClick={()=>unlinkBill(bill.id)}
+          style={{flex:1,padding:11,background:C.amberLight,color:C.amber,border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:13}}>
+          Délier
+        </button>}
+      </div>
+      <button onClick={()=>deleteOccurrence(bill.id)}
+        style={{width:"100%",padding:11,background:C.coralLight,color:C.coral,border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:13}}>
+        Supprimer cette échéance
+      </button>
+    </div>;
+  }
+
+  // ── EDIT OCCURRENCE VIEW ──────────────────────────────────────────────
+  if(view==="editOccurrence"){
+    const occ=bills.find(b=>b.id===editTarget);
+    if(!occ){setView("list");return null;}
+    return <div style={{animation:"fadeIn .3s ease"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+        <button onClick={()=>setView("detail")} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+        <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Modifier l'échéance</h2>
+      </div>
+      <div style={{background:C.surface,borderRadius:14,padding:16,border:`1px solid ${C.border}`}}>
+        <p style={{fontWeight:700,color:C.navy,marginBottom:4}}>{occ.label}</p>
+        <p style={{fontSize:12,color:C.sub,marginBottom:16}}>{occ.category}</p>
+        <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Date réelle du prélèvement</p>
+        <input type="date" value={eDate} onChange={e=>setEDate(e.target.value)}
+          style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
+        <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Montant réel (€)</p>
+        <input type="text" inputMode="decimal" value={eAmt} onChange={e=>setEAmt(e.target.value)}
+          style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:20,fontSize:14}}/>
+        <button onClick={saveOccurrence}
+          style={{width:"100%",padding:12,background:"linear-gradient(135deg,#7C3AED,#EC4899)",color:"#fff",border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:14}}>
+          Enregistrer les modifications
+        </button>
+      </div>
+    </div>;
+  }
+
+  // ── EDIT SCHEDULE VIEW ────────────────────────────────────────────────
+  if(view==="editSchedule"){
+    const nb=calcNb(sDateFrom,sDateTo);
+    return <div style={{animation:"fadeIn .3s ease"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+        <button onClick={()=>{setEditSchTarget(null);setView("addSchedule");}} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+        <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Modifier l'échéancier</h2>
+      </div>
+      <div style={{background:C.surface,borderRadius:14,padding:16,border:`1px solid ${C.border}`}}>
+        <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Nom</p>
+        <input type="text" value={sLabel} onChange={e=>setSLabel(e.target.value)}
+          style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
+        <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Catégorie</p>
+        <select value={sCategory} onChange={e=>setSCategory(e.target.value)}
+          style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}>
+          {CATS.map(c=><option key={c}>{c}</option>)}
+        </select>
+        <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Montant (€)</p>
+        <input type="text" inputMode="decimal" value={sAmount} onChange={e=>setSAmount(e.target.value)}
+          style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
+        <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Jour du prélèvement</p>
+        <input type="number" inputMode="numeric" value={sFixedDay} onChange={e=>setSFixedDay(e.target.value)}
+          style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}}>
+          <MonthPicker label="Premier prélèvement" value={sDateFrom} onChange={setSDateFrom}/>
+          <MonthPicker label="Dernier prélèvement" value={sDateTo} onChange={setSDateTo}/>
+        </div>
+        {sDateFrom&&sDateTo&&<div style={{background:C.indigoLight,borderRadius:8,padding:"10px 12px",margin:"12px 0",fontSize:13,color:C.indigo}}>
+          📅 {fmtMonth(sDateFrom)} → {fmtMonth(sDateTo)}
+        </div>}
+        {nb>0&&<div style={{background:C.sageLight,borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:13,color:C.sage}}>
+          ✔ {nb} échéance{nb>1?"s":""} · ⚠ Les échéances existantes seront régénérées
+        </div>}
+        <button onClick={saveSchedule}
+          style={{width:"100%",padding:12,background:"linear-gradient(135deg,#7C3AED,#EC4899)",color:"#fff",border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:14}}>
+          Enregistrer et régénérer
+        </button>
+      </div>
+    </div>;
+  }
+
+  // ── ADD SCHEDULE VIEW ─────────────────────────────────────────────────
+  if(view==="addSchedule"){
+    const nb=calcNb(form.dateFrom,form.dateTo);
+    return <div style={{animation:"fadeIn .3s ease"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+        <button onClick={()=>setView("list")} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+        <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Nouvel échéancier</h2>
+      </div>
+      <div style={{background:C.surface,borderRadius:14,padding:16,border:`1px solid ${C.border}`}}>
+        <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Nom de la facture</p>
+        <input type="text" placeholder="ex : TotalEnergies Électricité" value={form.label}
+          onChange={e=>setForm(f=>({...f,label:e.target.value}))}
+          style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
+        <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Catégorie</p>
+        <select value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}
+          style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}>
+          {CATS.map(c=><option key={c}>{c}</option>)}
+        </select>
+        <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Montant mensuel (€)</p>
+        <input type="text" inputMode="decimal" placeholder="ex : 73,00" value={form.amount}
+          onChange={e=>setForm(f=>({...f,amount:e.target.value}))}
+          style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
+        <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Jour du prélèvement</p>
+        <input type="number" inputMode="numeric" placeholder="ex : 5" value={form.fixedDay}
+          onChange={e=>setForm(f=>({...f,fixedDay:e.target.value}))}
+          style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}}>
+          <MonthPicker label="Premier prélèvement" value={form.dateFrom} onChange={v=>setForm(f=>({...f,dateFrom:v+"-01"}))}/>
+          <MonthPicker label="Dernier prélèvement" value={form.dateTo} onChange={v=>setForm(f=>({...f,dateTo:v+"-01"}))}/>
+        </div>
+        {(form.dateFrom||form.dateTo)&&<div style={{background:C.indigoLight,borderRadius:8,padding:"10px 12px",margin:"12px 0",fontSize:13,color:C.indigo}}>
+          📅 {form.dateFrom?fmtMonth(form.dateFrom):"…"} → {form.dateTo?fmtMonth(form.dateTo):"…"}
+        </div>}
+        {nb>0&&<div style={{background:C.sageLight,borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:13,color:C.sage}}>
+          ✔ {nb} échéance{nb>1?"s":""} de {form.amount||"…"} € · le {form.fixedDay||"…"} de chaque mois
+        </div>}
+        <button onClick={addSchedule}
+          disabled={!form.label||!form.amount||!form.dateFrom||!form.dateTo||!form.fixedDay}
+          style={{width:"100%",padding:13,background:"linear-gradient(135deg,#7C3AED,#EC4899)",color:"#fff",
+            border:"none",borderRadius:10,fontWeight:700,cursor:"pointer",fontSize:15,
+            opacity:(!form.label||!form.amount||!form.dateFrom||!form.dateTo||!form.fixedDay)?.4:1}}>
+          Générer toutes les échéances
+        </button>
+      </div>
+      {schedules.length>0&&<div style={{marginTop:20}}>
+        <p style={{fontSize:13,fontWeight:700,color:C.sub,marginBottom:10,letterSpacing:.5,textTransform:"uppercase"}}>Échéanciers enregistrés</p>
+        {schedules.map(s=><div key={s.id} style={{background:C.surface,borderRadius:12,padding:"12px 14px",marginBottom:8,border:`1px solid ${C.border}`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+            <div style={{flex:1,minWidth:0}}>
+              <p style={{fontWeight:600,color:C.navy,fontSize:13}}>{s.label}</p>
+              <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtAbs(s.amount)} · J{s.fixedDay}</p>
+              <p style={{color:C.indigo,fontSize:11,marginTop:2}}>{fmtMonth(s.dateFrom.slice(0,7))} → {fmtMonth(s.dateTo.slice(0,7))}</p>
+            </div>
+            <div style={{display:"flex",gap:6,flexShrink:0}}>
+              <button onClick={()=>goToEditSchedule(s.id)}
+                style={{background:C.indigoLight,color:C.indigo,border:"none",borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:600,cursor:"pointer"}}>✎</button>
+              <button onClick={()=>deleteSchedule(s.id)}
+                style={{background:C.coralLight,color:C.coral,border:"none",borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:600,cursor:"pointer"}}>Suppr.</button>
+            </div>
+          </div>
+        </div>)}
+      </div>}
+    </div>;
+  }
+
+  // ── LIST VIEW ─────────────────────────────────────────────────────────
+  return <div style={{animation:"fadeIn .3s ease"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+      <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Dépenses fixes</h2>
+      <button onClick={()=>setView("addSchedule")}
+        style={{background:"linear-gradient(135deg,#7C3AED,#EC4899)",color:"#fff",border:"none",borderRadius:10,padding:"9px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>
+        + Échéancier
+      </button>
+    </div>
+    <button onClick={()=>autoMatch(monthBills,setBills,bank,"expense")}
+      style={{width:"100%",padding:"10px",background:C.indigoLight,color:C.indigo,border:`1px solid ${C.border}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:12}}>
+      ⚡ Rapprocher automatiquement
+    </button>
+    {monthBills.length>0&&<div style={{background:"linear-gradient(135deg,#7C3AED,#EC4899)",borderRadius:14,padding:"14px 16px",marginBottom:16}}>
+      <p style={{color:"rgba(255,255,255,.6)",fontSize:11}}>CE MOIS</p>
+      <p style={{color:"#fff",fontSize:22,fontWeight:700}}>{fmtAbs(total)}</p>
+    </div>}
+    {monthBills.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.sub}}>
+      <div style={{fontSize:40,marginBottom:12}}>📋</div>
+      <p style={{fontSize:14}}>Aucune facture ce mois-ci.</p>
+      <p style={{fontSize:13,marginTop:4}}>Ajoutez un échéancier pour commencer.</p>
+    </div>}
+    {monthBills.map(f=><div key={f.id} onClick={()=>goToDetail(f.id)}
+      style={{background:C.surface,borderRadius:12,padding:"12px 14px",marginBottom:8,border:`1px solid ${C.border}`,cursor:"pointer"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{flex:1,minWidth:0}}>
+          <p style={{fontWeight:600,color:C.navy,fontSize:14}}>{f.label}</p>
+          <p style={{color:C.sub,fontSize:11,marginTop:2}}>{f.category} · {fmtDate(f.date)}</p>
+        </div>
+        <div style={{textAlign:"right"}}>
+          <p style={{fontWeight:700,color:C.navy,fontSize:15}}>{fmtAbs(f.amount)}</p>
+          <div style={{marginTop:4}}><Badge s={f.status}/></div>
+        </div>
+      </div>
+    </div>)}
+  </div>;
+}
+
+// ── Auto-match helper ────────────────────────────────────────────────────
+function autoMatch(items, setItems, bank, type) {
+  const results = {matched:[], duplicates:[], unmatched:[]};
+  const usedBankIds = new Set();
+
+  const updated = items.map(item => {
+    if(item.bankId) return item; // already linked
+    const isExpense = type === "expense";
+    const candidates = bank.filter(b => {
+      if(usedBankIds.has(b.id)) return false;
+      if(isExpense && b.amount >= 0) return false;
+      if(!isExpense && b.amount <= 0) return false;
+      const diff = Math.abs(Math.abs(b.amount) - item.amount);
+      if(diff > 0.01) return false;
+      const diffDays = Math.abs((new Date(b.date) - new Date(item.date)) / (1000*60*60*24));
+      return diffDays <= 10;
+    });
+
+    if(candidates.length === 1) {
+      usedBankIds.add(candidates[0].id);
+      results.matched.push({item, bank: candidates[0]});
+      return {...item, status: isExpense ? "matched" : "matched", bankId: candidates[0].id};
+    } else if(candidates.length > 1) {
+      results.duplicates.push({item, candidates});
+      return item;
+    } else {
+      results.unmatched.push(item);
+      return item;
+    }
+  });
+
+  setItems(updated);
+
+  const msg = [
+    results.matched.length > 0 ? `✔ ${results.matched.length} rapprochement(s) effectué(s)` : null,
+    results.duplicates.length > 0 ? `⚠ ${results.duplicates.length} doublon(s) détecté(s) — à vérifier manuellement` : null,
+    results.unmatched.length > 0 ? `✕ ${results.unmatched.length} sans correspondance` : null,
+  ].filter(Boolean).join("\n");
+
+  alert(msg || "Aucune nouvelle correspondance trouvée.");
+}
+
+// ── Recettes ──────────────────────────────────────────────────────────────
+function Recettes({recettes, setRecettes, bank}) {
+  const [view, setView] = useState("list");
+  const [selected, setSelected] = useState(null);
+  const [addType, setAddType] = useState(null); // null | "one" | "recurring"
+  // Form ponctuelle
+  const [form, setForm] = useState({label:"", amount:"", date:todayISO()});
+  // Form récurrente
+  const [rForm, setRForm] = useState({label:"", amount:"", day:"", dateFrom:"", dateTo:""});
+  // Edit state
+  const [eLabel, setELabel] = useState("");
+  const [eAmount, setEAmount] = useState("");
+  const [eDate, setEDate] = useState("");
+  // Schedules récurrentes
+  const [rSchedules, setRSchedules] = useState(()=>load("recSchedules",[]));
+  useEffect(()=>save("recSchedules",rSchedules),[rSchedules]);
+
+  const fmtMonth = ym => {
+    if(!ym||ym.length<7) return "";
+    const[y,m]=ym.split("-");
+    return new Date(+y,+m-1,1).toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+  };
+
+  const MonthPicker = ({label,value,onChange}) => {
+    const opts=[];
+    for(let y=2026;y<=2035;y++){
+      const startM=(y===2026?6:1);
+      for(let m=startM;m<=12;m++){
+        const val=`${y}-${String(m).padStart(2,"0")}`;
+        const lbl=new Date(y,m-1,1).toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+        opts.push({val,lbl});
+      }
+    }
+    return <div>
+      <p style={{fontSize:12,color:C.sub,marginBottom:6}}>{label}</p>
+      <select value={value} onChange={e=>onChange(e.target.value)}
+        style={{width:"100%",padding:"11px 10px",borderRadius:8,border:`1px solid ${C.border}`,fontSize:14,background:"#fff",color:C.navy}}>
+        <option value="">-- Choisir --</option>
+        {opts.map(o=><option key={o.val} value={o.val}>{o.lbl}</option>)}
+      </select>
+    </div>;
+  };
+
+  const generateOccurrences = (sch) => {
+    const occs=[];
+    const[fy,fm]=sch.dateFrom.slice(0,7).split("-").map(Number);
+    const[ty,tm]=sch.dateTo.slice(0,7).split("-").map(Number);
+    let y=fy,m=fm;
+    while(y<ty||(y===ty&&m<=tm)){
+      const dd=String(sch.day).padStart(2,"0");
+      const mm=String(m).padStart(2,"0");
+      occs.push({id:"rec"+Date.now()+Math.random().toString(36).slice(2),
+        scheduleId:sch.id,label:sch.label,amount:sch.amount,
+        date:`${y}-${mm}-${dd}`,status:"missing",bankId:null,type:"recurring"});
+      m++;if(m>12){m=1;y++;}
+    }
+    return occs;
+  };
+
+  const addOne = () => {
+    if(!form.label||!form.amount) return;
+    const newR={id:"rec"+Date.now(),date:form.date,label:form.label,
+      amount:parseFloat(form.amount.replace(",",".")),status:"missing",bankId:null,type:"one"};
+    setRecettes(r=>[newR,...r].sort((a,b)=>b.date.localeCompare(a.date)));
+    setForm({label:"",amount:"",date:todayISO()});
+    setAddType(null);setView("list");
+  };
+
+  const addRecurring = () => {
+    if(!rForm.label||!rForm.amount||!rForm.day||!rForm.dateFrom||!rForm.dateTo) return;
+    const sch={id:"rsch"+Date.now(),label:rForm.label,
+      amount:parseFloat(rForm.amount.replace(",",".")),
+      day:parseInt(rForm.day),dateFrom:rForm.dateFrom,dateTo:rForm.dateTo};
+    setRSchedules(s=>[...s,sch]);
+    const occs=generateOccurrences(sch);
+    setRecettes(r=>[...r,...occs].sort((a,b)=>b.date.localeCompare(a.date)));
+    setRForm({label:"",amount:"",day:"",dateFrom:"",dateTo:""});
+    setAddType(null);setView("list");
+  };
+
+  const deleteSchedule = schId => {
+    setRSchedules(s=>s.filter(x=>x.id!==schId));
+    setRecettes(r=>r.filter(x=>x.scheduleId!==schId));
+  };
+
+  const goToEdit = id => {
+    const r=recettes.find(x=>x.id===id);
+    if(!r) return;
+    setELabel(r.label);setEAmount(String(r.amount));setEDate(r.date);
+    setSelected(id);setView("edit");
+  };
+
+  const saveEdit = () => {
+    setRecettes(r=>r.map(x=>x.id===selected
+      ?{...x,label:eLabel,amount:parseFloat(eAmt.replace(",",".")),date:eDate}:x));
+    setSelected(null);setView("list");
+  };
+
+  // Fix: use eAmount not eAmt in saveEdit
+  const saveEditFixed = () => {
+    setRecettes(r=>r.map(x=>x.id===selected
+      ?{...x,label:eLabel,amount:parseFloat(eAmount.replace(",",".")),date:eDate}:x));
+    setSelected(null);setView("list");
+  };
+
+  const deleteRec = id => {
+    setRecettes(r=>r.filter(x=>x.id!==id));
+    setSelected(null);setView("list");
+  };
+
+  const unlinkRec = id => setRecettes(r=>r.map(x=>x.id===id?{...x,status:"missing",bankId:null}:x));
+
+  const linkToBank = (recId, bankId) => {
+    setRecettes(r=>r.map(x=>x.id===recId?{...x,status:"matched",bankId}:x));
+    setSelected(null);setView("list");
+  };
+
+  const findCandidates = rec => {
+    const rDate=new Date(rec.date);
+    return bank.filter(b=>{
+      if(b.amount<=0) return false;
+      if(Math.abs(b.amount-rec.amount)>0.01) return false;
+      return Math.abs((new Date(b.date)-rDate)/(1000*60*60*24))<=10;
+    });
+  };
+
+  // ── MATCH VIEW ────────────────────────────────────────────────────────
+  if(view==="match"){
+    const rec=recettes.find(x=>x.id===selected);
+    const candidates=rec?findCandidates(rec):[];
+    const others=bank.filter(b=>b.amount>0&&!candidates.find(c=>c.id===b.id));
+    return <div style={{animation:"fadeIn .3s ease"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+        <button onClick={()=>setView("list")} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+        <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Lier au relevé</h2>
+      </div>
+      {rec&&<div style={{background:C.indigoLight,borderRadius:12,padding:"11px 14px",marginBottom:16,fontSize:13,color:C.indigo}}>
+        <strong>{rec.label}</strong> — {fmtAbs(rec.amount)} le {fmtDate(rec.date)}
+      </div>}
+      {candidates.length>0&&<>
+        <p style={{fontSize:12,fontWeight:700,color:C.sage,marginBottom:8,textTransform:"uppercase",letterSpacing:.5}}>✔ Correspondances probables</p>
+        {candidates.map(b=><button key={b.id} onClick={()=>linkToBank(selected,b.id)}
+          style={{width:"100%",textAlign:"left",background:C.sageLight,border:`1px solid ${C.sage}`,borderRadius:10,padding:"11px 14px",marginBottom:8,cursor:"pointer"}}>
+          <p style={{fontWeight:600,color:C.navy,fontSize:13}}>{b.label}</p>
+          <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtDate(b.date)} · {fmtAbs(b.amount)}</p>
+        </button>)}
+      </>}
+      {others.length>0&&<>
+        <p style={{fontSize:12,fontWeight:700,color:C.sub,marginBottom:8,marginTop:12,textTransform:"uppercase",letterSpacing:.5}}>Autres entrées bancaires</p>
+        {others.slice(0,10).map(b=><button key={b.id} onClick={()=>linkToBank(selected,b.id)}
+          style={{width:"100%",textAlign:"left",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 14px",marginBottom:8,cursor:"pointer"}}>
+          <p style={{fontWeight:600,color:C.navy,fontSize:13}}>{b.label}</p>
+          <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtDate(b.date)} · {fmtAbs(b.amount)}</p>
+        </button>)}
+      </>}
+      <button onClick={()=>setView("list")} style={{width:"100%",padding:11,background:C.border,color:C.sub,border:"none",borderRadius:10,fontSize:13,cursor:"pointer",marginTop:4}}>
+        Ignorer pour l'instant
+      </button>
+    </div>;
+  }
+
+  // ── EDIT VIEW ─────────────────────────────────────────────────────────
+  if(view==="edit"){
+    const rec=recettes.find(x=>x.id===selected);
+    if(!rec){setView("list");return null;}
+    return <div style={{animation:"fadeIn .3s ease"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+        <button onClick={()=>setView("list")} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+        <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Modifier la recette</h2>
+      </div>
+      <div style={{background:C.surface,borderRadius:14,padding:16,border:`1px solid ${C.border}`}}>
+        <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Nature du versement</p>
+        <input type="text" value={eLabel} onChange={e=>setELabel(e.target.value)}
+          style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
+        <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Montant (€)</p>
+        <input type="text" inputMode="decimal" value={eAmount} onChange={e=>setEAmount(e.target.value)}
+          style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
+        <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Date</p>
+        <input type="date" value={eDate} onChange={e=>setEDate(e.target.value)}
+          style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:20,fontSize:14}}/>
+        <button onClick={saveEditFixed}
+          style={{width:"100%",padding:12,background:"linear-gradient(135deg,#7C3AED,#EC4899)",color:"#fff",border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:14,marginBottom:10}}>
+          Enregistrer les modifications
+        </button>
+        {rec.scheduleId&&<p style={{fontSize:11,color:C.sub,textAlign:"center",marginBottom:8}}>Seule cette occurrence sera modifiée</p>}
+        <button onClick={()=>deleteRec(rec.id)}
+          style={{width:"100%",padding:12,background:C.coralLight,color:C.coral,border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:14}}>
+          Supprimer cette recette
+        </button>
+        {rec.scheduleId&&<button onClick={()=>deleteSchedule(rec.scheduleId)}
+          style={{width:"100%",padding:12,background:C.coralLight,color:C.coral,border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:14,marginTop:8}}>
+          Supprimer tout l'échéancier
+        </button>}
+      </div>
+    </div>;
+  }
+
+  // ── ADD VIEW ──────────────────────────────────────────────────────────
+  if(view==="add"){
+    if(!addType) return <div style={{animation:"fadeIn .3s ease"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:24}}>
+        <button onClick={()=>setView("list")} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+        <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Ajouter une recette</h2>
+      </div>
+      <button onClick={()=>setAddType("one")}
+        style={{width:"100%",padding:"18px 16px",background:C.surface,border:`2px solid ${C.indigo}`,borderRadius:14,marginBottom:12,cursor:"pointer",textAlign:"left"}}>
+        <p style={{fontWeight:700,color:C.indigo,fontSize:15,marginBottom:4}}>💸 Recette ponctuelle</p>
+        <p style={{color:C.sub,fontSize:13}}>Un versement unique (remboursement, prime…)</p>
+      </button>
+      <button onClick={()=>setAddType("recurring")}
+        style={{width:"100%",padding:"18px 16px",background:C.surface,border:`2px solid ${C.sage}`,borderRadius:14,cursor:"pointer",textAlign:"left"}}>
+        <p style={{fontWeight:700,color:C.sage,fontSize:15,marginBottom:4}}>🔄 Recette récurrente</p>
+        <p style={{color:C.sub,fontSize:13}}>Versement mensuel régulier (salaire, loyer reçu…)</p>
+      </button>
+    </div>;
+
+    if(addType==="one") return <div style={{animation:"fadeIn .3s ease"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+        <button onClick={()=>setAddType(null)} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+        <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Recette ponctuelle</h2>
+      </div>
+      <input type="text" placeholder="Nature du versement *" value={form.label}
+        onChange={e=>setForm(f=>({...f,label:e.target.value}))}
+        style={{width:"100%",padding:"12px 14px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:10,fontSize:15}}/>
+      <input type="text" inputMode="decimal" placeholder="Montant en € *  ex: 2350,00" value={form.amount}
+        onChange={e=>setForm(f=>({...f,amount:e.target.value}))}
+        style={{width:"100%",padding:"12px 14px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:10,fontSize:15}}/>
+      <input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}
+        style={{width:"100%",padding:"12px 14px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:16,fontSize:15}}/>
+      <button onClick={addOne} disabled={!form.label||!form.amount}
+        style={{width:"100%",padding:14,background:"linear-gradient(135deg,#7C3AED,#EC4899)",color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",opacity:(!form.label||!form.amount)?.4:1}}>
+        Enregistrer
+      </button>
+    </div>;
+
+    if(addType==="recurring"){
+      const[fy,fm]=rForm.dateFrom?rForm.dateFrom.split("-").map(Number):[0,0];
+      const[ty,tm]=rForm.dateTo?rForm.dateTo.split("-").map(Number):[0,0];
+      const nb=rForm.dateFrom&&rForm.dateTo?Math.max(0,(ty-fy)*12+(tm-fm)+1):0;
+      return <div style={{animation:"fadeIn .3s ease"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+          <button onClick={()=>setAddType(null)} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+          <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Recette récurrente</h2>
+        </div>
+        <div style={{background:C.surface,borderRadius:14,padding:16,border:`1px solid ${C.border}`}}>
+          <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Nature du versement</p>
+          <input type="text" placeholder="ex : Salaire" value={rForm.label}
+            onChange={e=>setRForm(f=>({...f,label:e.target.value}))}
+            style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
+          <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Montant mensuel (€)</p>
+          <input type="text" inputMode="decimal" placeholder="ex : 2350,00" value={rForm.amount}
+            onChange={e=>setRForm(f=>({...f,amount:e.target.value}))}
+            style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
+          <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Jour du versement</p>
+          <input type="number" inputMode="numeric" placeholder="ex : 26" value={rForm.day}
+            onChange={e=>setRForm(f=>({...f,day:e.target.value}))}
+            style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}}>
+            <MonthPicker label="Premier versement" value={rForm.dateFrom} onChange={v=>setRForm(f=>({...f,dateFrom:v+"-01"}))}/>
+            <MonthPicker label="Dernier versement" value={rForm.dateTo} onChange={v=>setRForm(f=>({...f,dateTo:v+"-01"}))}/>
+          </div>
+          {rForm.dateFrom&&rForm.dateTo&&<div style={{background:C.indigoLight,borderRadius:8,padding:"10px 12px",marginBottom:10,fontSize:13,color:C.indigo}}>
+            📅 {fmtMonth(rForm.dateFrom.slice(0,7))} → {fmtMonth(rForm.dateTo.slice(0,7))}
+          </div>}
+          {nb>0&&<div style={{background:C.sageLight,borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:13,color:C.sage}}>
+            ✔ {nb} versement{nb>1?"s":""} de {rForm.amount||"…"} €
+          </div>}
+          <button onClick={addRecurring} disabled={!rForm.label||!rForm.amount||!rForm.day||!rForm.dateFrom||!rForm.dateTo}
+            style={{width:"100%",padding:13,background:"linear-gradient(135deg,#059669,#10B981)",color:"#fff",border:"none",borderRadius:10,fontWeight:700,cursor:"pointer",fontSize:15,
+              opacity:(!rForm.label||!rForm.amount||!rForm.day||!rForm.dateFrom||!rForm.dateTo)?.4:1}}>
+            Générer tous les versements
+          </button>
+        </div>
+        {rSchedules.length>0&&<div style={{marginTop:20}}>
+          <p style={{fontSize:13,fontWeight:700,color:C.sub,marginBottom:10,letterSpacing:.5,textTransform:"uppercase"}}>Échéanciers recettes</p>
+          {rSchedules.map(s=><div key={s.id} style={{background:C.surface,borderRadius:12,padding:"12px 14px",marginBottom:8,border:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <p style={{fontWeight:600,color:C.navy,fontSize:13}}>{s.label}</p>
+              <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtAbs(s.amount)} · J{s.day}</p>
+              <p style={{color:C.sage,fontSize:11,marginTop:2}}>{fmtMonth(s.dateFrom.slice(0,7))} → {fmtMonth(s.dateTo.slice(0,7))}</p>
+            </div>
+            <button onClick={()=>deleteSchedule(s.id)}
+              style={{background:C.coralLight,color:C.coral,border:"none",borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+              Suppr.
+            </button>
+          </div>)}
+        </div>}
+      </div>;
+    }
+  }
+
+  // ── LIST VIEW ─────────────────────────────────────────────────────────
+  const sorted=[...recettes].sort((a,b)=>b.date.localeCompare(a.date));
+  const total=recettes.reduce((s,r)=>s+r.amount,0);
+  const matched=recettes.filter(r=>r.status==="matched").length;
+
+  return <div style={{animation:"fadeIn .3s ease"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+      <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Recettes</h2>
+      <button onClick={()=>setView("add")} style={{background:"linear-gradient(135deg,#059669,#10B981)",color:"#fff",border:"none",borderRadius:10,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ Ajouter</button>
+    </div>
+    <button onClick={()=>autoMatch(recettes,setRecettes,bank,"income")}
+      style={{width:"100%",padding:"10px",background:C.sageLight,color:C.sage,border:`1px solid ${C.sage}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:16}}>
+      ⚡ Rapprocher automatiquement
+    </button>
+    {recettes.length>0&&<div style={{background:"linear-gradient(135deg,#059669,#10B981)",borderRadius:14,padding:"14px 16px",marginBottom:16,display:"flex",justifyContent:"space-between"}}>
+      <div><p style={{color:"rgba(255,255,255,.6)",fontSize:11}}>TOTAL</p><p style={{color:"#fff",fontSize:22,fontWeight:700}}>{fmtAbs(total)}</p></div>
+      <div style={{textAlign:"right"}}><p style={{color:"rgba(255,255,255,.6)",fontSize:11}}>RAPPROCHÉES</p><p style={{color:"#fff",fontSize:22,fontWeight:700}}>{matched}/{recettes.length}</p></div>
+    </div>}
+    {recettes.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.sub}}>
+      <div style={{fontSize:40,marginBottom:12}}>💰</div>
+      <p style={{fontSize:14}}>Aucune recette enregistrée.</p>
+      <p style={{fontSize:13,marginTop:4}}>Appuyez sur "+ Ajouter" pour commencer.</p>
+    </div>}
+    {sorted.map(r=>{
+      const linkedBank=r.bankId?bank.find(b=>b.id===r.bankId):null;
+      return <div key={r.id} style={{background:C.surface,borderRadius:12,padding:14,marginBottom:10,border:`1px solid ${C.border}`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+              <p style={{fontWeight:600,color:C.navy,fontSize:14}}>{r.label}</p>
+              {r.type==="recurring"&&<span style={{fontSize:10,background:C.sageLight,color:C.sage,borderRadius:4,padding:"1px 5px"}}>récurrent</span>}
+            </div>
+            <p style={{color:C.sub,fontSize:12}}>{fmtDate(r.date)}</p>
+            {linkedBank&&<p style={{fontSize:11,color:C.sage,marginTop:2}}>✔ {linkedBank.label}</p>}
+          </div>
+          <div style={{textAlign:"right",marginLeft:8}}>
+            <p style={{fontWeight:700,color:C.sage,fontSize:15}}>+{fmtAbs(r.amount)}</p>
+            <div style={{marginTop:4}}><Badge s={r.status}/></div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:6,marginTop:10}}>
+          <button onClick={()=>goToEdit(r.id)}
+            style={{flex:1,padding:"7px",background:C.indigoLight,color:C.indigo,border:"none",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer"}}>✎ Modifier</button>
+          <button onClick={()=>{setSelected(r.id);setView("match");}}
+            style={{flex:1,padding:"7px",background:r.bankId?C.sageLight:C.amberLight,color:r.bankId?C.sage:C.amber,border:"none",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+            {r.bankId?"✔ Lié":"Lier"}
+          </button>
+          {r.bankId&&<button onClick={()=>unlinkRec(r.id)}
+            style={{padding:"7px 10px",background:C.amberLight,color:C.amber,border:"none",borderRadius:8,fontSize:12,cursor:"pointer"}}>Délier</button>}
+        </div>
+      </div>;
+    })}
+  </div>;
+}
+
+
+const TABS=[
+  {id:"dashboard",icon:"◉",label:"Accueil"},
+  {id:"receipts",icon:"🧾",label:"Tickets"},
+  {id:"bills",icon:"📋",label:"Factures"},
+  {id:"recettes",icon:"💰",label:"Recettes"},
+  {id:"bank",icon:"🏦",label:"Relevé"},
+];
+
+// ── Export helpers ───────────────────────────────────────────────────────
+function downloadJSON(data, filename) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href=url; a.download=filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function printReconciliationReport(bank, receipts, bills, month) {
+  const [y,m] = month.split("-");
+  const monthLabel = new Date(+y,+m-1,1).toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+
+  const bankMonth = bank.filter(b=>b.date&&b.date.startsWith(month));
+  const receiptsMonth = receipts.filter(r=>r.date&&r.date.startsWith(month));
+  const billsMonth = bills.filter(b=>b.date&&b.date.startsWith(month));
+
+  const income = bankMonth.filter(b=>b.amount>0).reduce((s,b)=>s+b.amount,0);
+  const expenses = bankMonth.filter(b=>b.amount<0).reduce((s,b)=>s+Math.abs(b.amount),0);
+
+  const statusLabel = s => s==="matched"||s==="paid" ? "✔ Rapproché" : s==="missing" ? "✕ Manquant" : "⚠ Incertain";
+  const fmt2 = n => n.toFixed(2).replace(".",",")+"\u202f€";
+  const fmtD = d => { const[yy,mm,dd]=d.split("-"); return`${dd}/${mm}/${yy}`; };
+
+  const rows = (items, cols) => items.map(item =>
+    `<tr>${cols.map(c=>`<td>${c(item)}</td>`).join("")}</tr>`
+  ).join("");
+
+  const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
+<title>Rapport rapprochement — ${monthLabel}</title>
+<style>
+  body{font-family:-apple-system,sans-serif;color:#1A1F3C;padding:32px;max-width:800px;margin:0 auto;}
+  h1{font-size:22px;margin-bottom:4px;}
+  .sub{color:#6B7280;font-size:13px;margin-bottom:32px;}
+  h2{font-size:15px;font-weight:700;margin:28px 0 10px;padding-bottom:6px;border-bottom:2px solid #E4E7F0;}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px;}
+  th{text-align:left;padding:7px 10px;background:#F7F8FC;font-weight:700;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:#6B7280;}
+  td{padding:8px 10px;border-bottom:1px solid #F0F0F0;}
+  .ok{color:#10B981;font-weight:600;} .bad{color:#EF4444;font-weight:600;} .warn{color:#F59E0B;font-weight:600;}
+  .summary{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:28px;}
+  .card{background:#F7F8FC;border-radius:10px;padding:14px 16px;}
+  .card p:first-child{font-size:11px;color:#6B7280;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;}
+  .card p:last-child{font-size:20px;font-weight:700;}
+  @media print{body{padding:16px;} button{display:none;}}
+</style></head><body>
+<h1>Rapport de rapprochement bancaire</h1>
+<p class="sub">${monthLabel} · Généré le ${new Date().toLocaleDateString("fr-FR")}</p>
+<div class="summary">
+  <div class="card"><p>Entrées</p><p style="color:#10B981">+${fmt2(income)}</p></div>
+  <div class="card"><p>Sorties</p><p style="color:#EF4444">−${fmt2(expenses)}</p></div>
+  <div class="card"><p>Solde</p><p>${fmt2(income-expenses)}</p></div>
+</div>
+
+<h2>Relevé bancaire (${bankMonth.length} opérations)</h2>
+<table><thead><tr><th>Date</th><th>Libellé</th><th>Montant</th><th>Statut</th></tr></thead><tbody>
+${rows(bankMonth, [
+  b=>fmtD(b.date),
+  b=>b.label,
+  b=>(b.amount>0?"+":"")+fmt2(b.amount),
+  b=>{ const rm=receipts.find(r=>r.bankId===b.id); const bm=bills.find(f=>f.bankId===b.id);
+       return rm||bm ? '<span class="ok">✔ Rapproché</span>' : '<span>—</span>'; }
+])}
+</tbody></table>
+
+<h2>Tickets de caisse (${receiptsMonth.length})</h2>
+<table><thead><tr><th>Date</th><th>Magasin</th><th>Montant</th><th>Statut</th></tr></thead><tbody>
+${rows(receiptsMonth, [
+  r=>fmtD(r.date), r=>r.label, r=>fmt2(r.amount),
+  r=>r.status==="matched"?'<span class="ok">✔ Rapproché</span>':'<span class="warn">⚠ Sans contrepartie</span>'
+])}
+</tbody></table>
+
+<h2>Factures fixes (${billsMonth.length})</h2>
+<table><thead><tr><th>Date prévue</th><th>Libellé</th><th>Montant</th><th>Statut</th></tr></thead><tbody>
+${rows(billsMonth, [
+  f=>fmtD(f.date), f=>f.label, f=>fmt2(f.amount),
+  f=>f.status==="paid"?'<span class="ok">✔ Payé</span>':f.status==="missing"?'<span class="bad">✕ Manquant</span>':'<span class="warn">⚠ Incertain</span>'
+])}
+</tbody></table>
+
+<h2>Anomalies détectées</h2>
+${[
+  ...billsMonth.filter(f=>f.status==="missing").map(f=>`<p class="bad">✕ Facture manquante : ${f.label} — ${fmt2(f.amount)} prévue le ${fmtD(f.date)}</p>`),
+  ...billsMonth.filter(f=>f.status==="doubt").map(f=>`<p class="warn">⚠ Incertain : ${f.label} — paiement non confirmé</p>`),
+  ...receiptsMonth.filter(r=>r.status==="missing").map(r=>`<p class="warn">⚠ Ticket sans contrepartie bancaire : ${r.label} (${fmt2(r.amount)})</p>`),
+].join("")||'<p class="ok">✔ Aucune anomalie détectée ce mois-ci.</p>'}
+
+<br><br>
+<button onclick="window.print()" style="background:#4F46E5;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">
+  🖨 Imprimer / Enregistrer en PDF
+</button>
+</body></html>`;
+
+  const w = window.open("","_blank");
+  w.document.write(html);
+  w.document.close();
+}
+
+function App(){
+  const [tab,setTab]=useState("dashboard");
+  const [bank,setBank]=useState(()=>load("bank",INIT_BANK));
+  const [receipts,setReceipts]=useState(()=>load("receipts",INIT_RECEIPTS));
+  const [bills,setBills]=useState(()=>load("bills",INIT_BILLS));
+  const [recettes,setRecettes]=useState(()=>load("recettes",[]));
+
+  const nowStr=`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`;
+  const [currentMonth,setCurrentMonth]=useState(nowStr);
+  const [showExport,setShowExport]=useState(false);
+
+  useEffect(()=>save("bank",bank),[bank]);
+  useEffect(()=>save("receipts",receipts),[receipts]);
+  useEffect(()=>save("bills",bills),[bills]);
+  useEffect(()=>save("recettes",recettes),[recettes]);
+
+  const bankMonth=bank.filter(b=>b.date&&b.date.startsWith(currentMonth));
+  const receiptsMonth=receipts.filter(r=>r.date&&r.date.startsWith(currentMonth));
+
+  const handleExportJSON=()=>{
+    const schedules=load("schedules",[]);
+    const recSchedules=load("recSchedules",[]);
+    downloadJSON({bank,receipts,bills,recettes,schedules,recSchedules,exportedAt:new Date().toISOString()},"mon-budget-sauvegarde.json");
+    setShowExport(false);
+  };
+
+  const handleImportJSON=(e)=>{
+    const file=e.target.files[0]; if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{
+        const data=JSON.parse(ev.target.result);
+        if(data.bank)setBank(data.bank);
+        if(data.receipts)setReceipts(data.receipts);
+        if(data.bills)setBills(data.bills);
+        if(data.schedules)save("schedules",data.schedules);
+        if(data.recettes)setRecettes(data.recettes);
+        if(data.recSchedules)save("recSchedules",data.recSchedules);
+        alert("Données importées avec succès !");
+      }catch{alert("Fichier invalide.");}
+    };
+    reader.readAsText(file);
+    setShowExport(false);
+  };
+
+  const importRef=useRef();
+
+  const recettesMonth=recettes.filter(r=>r.date&&r.date.startsWith(currentMonth));
+  const views={
+    dashboard:<Dashboard bank={bankMonth} receipts={receiptsMonth} bills={bills.filter(b=>b.date&&b.date.startsWith(currentMonth))}/>,
+    receipts:<Receipts receipts={receiptsMonth} setReceipts={setReceipts} bank={bank} setBank={setBank}/>,
+    bank:<Bank bank={bankMonth} setBank={setBank} receipts={receiptsMonth} bills={bills} recettes={recettesMonth}/>,
+    bills:<Bills bills={bills} setBills={setBills} currentMonth={currentMonth} bank={bank}/>,
+    recettes:<Recettes recettes={recettesMonth} setRecettes={setRecettes} bank={bank}/>,
+  };
+
+  return <div style={{maxWidth:430,margin:"0 auto",minHeight:"100dvh",background:C.bg,position:"relative"}}>
+    {/* Header */}
+    <div style={{background:"linear-gradient(135deg,#7C3AED 0%,#EC4899 60%,#F97316 100%)",height:60,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 12px",gap:8}}>
+      <button onClick={()=>setShowExport(true)} style={{background:"rgba(255,255,255,.2)",border:"none",borderRadius:8,padding:"5px 10px",color:"#fff",fontSize:18,cursor:"pointer",flexShrink:0}}>⋮</button>
+      <MonthSelector currentMonth={currentMonth} setCurrentMonth={setCurrentMonth}/>
+      <button onClick={handleExportJSON} style={{background:"linear-gradient(135deg,#0EA5E9,#2563EB)",border:"2px solid rgba(255,255,255,.4)",borderRadius:10,padding:"5px 10px",color:"#fff",fontSize:11,fontWeight:800,cursor:"pointer",flexShrink:0,letterSpacing:.3,boxShadow:"0 2px 8px rgba(37,99,235,.5)"}}>💾 Sauvegarder</button>
+    </div>
+
+    {/* Export/Import modal */}
+    {showExport&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:200,display:"flex",alignItems:"flex-end"}} onClick={()=>setShowExport(false)}>
+      <div style={{background:C.surface,borderRadius:"20px 20px 0 0",padding:"24px 20px 40px",width:"100%",maxWidth:430,margin:"0 auto"}} onClick={e=>e.stopPropagation()}>
+        <div style={{width:36,height:4,borderRadius:2,background:C.border,margin:"0 auto 20px"}}/>
+        <p style={{fontWeight:700,color:C.navy,fontSize:17,marginBottom:20}}>Données & Export</p>
+
+        <button onClick={handleExportJSON} style={{width:"100%",padding:"13px 16px",background:C.indigoLight,color:C.indigo,border:"none",borderRadius:12,fontSize:14,fontWeight:600,cursor:"pointer",textAlign:"left",marginBottom:10}}>
+          💾 Sauvegarder toutes mes données (JSON)
+        </button>
+
+        <button onClick={()=>importRef.current.click()} style={{width:"100%",padding:"13px 16px",background:C.indigoLight,color:C.indigo,border:"none",borderRadius:12,fontSize:14,fontWeight:600,cursor:"pointer",textAlign:"left",marginBottom:10}}>
+          📂 Restaurer une sauvegarde (JSON)
+        </button>
+        <input ref={importRef} type="file" accept=".json" style={{display:"none"}} onChange={handleImportJSON}/>
+
+        <button onClick={()=>{printReconciliationReport(bank,receipts,bills,currentMonth);setShowExport(false);}} style={{width:"100%",padding:"13px 16px",background:C.sageLight,color:C.sage,border:"none",borderRadius:12,fontSize:14,fontWeight:600,cursor:"pointer",textAlign:"left",marginBottom:10}}>
+          📄 Rapport de rapprochement PDF (ce mois)
+        </button>
+
+        <button onClick={()=>setShowExport(false)} style={{width:"100%",padding:12,background:C.border,color:C.sub,border:"none",borderRadius:12,fontSize:14,cursor:"pointer",marginTop:4}}>
+          Annuler
+        </button>
+      </div>
+    </div>}
+
+    <div style={{padding:"20px 16px 100px"}}>
+      {views[tab]}
+    </div>
+    <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,background:C.surface,borderTop:`1px solid ${C.border}`,display:"flex",padding:"10px 0 22px",zIndex:100}}>
+      {TABS.map(t=><button key={t.id} onClick={()=>setTab(t.id)}
+        style={{flex:1,background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"4px 0"}}>
+        <span style={{fontSize:20,lineHeight:1}}>{t.icon}</span>
+        <span style={{fontSize:10,fontWeight:tab===t.id?700:400,color:tab===t.id?C.indigo:C.sub}}>{t.label}</span>
+        {tab===t.id&&<div style={{width:4,height:4,borderRadius:"50%",background:"linear-gradient(135deg,#7C3AED,#EC4899)"}}/>}
+      </button>)}
+    </div>
+  </div>;
+}
+
+ReactDOM.render(<App/>,document.getElementById("root"));
+</script>
+</body>
+</html>
