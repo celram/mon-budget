@@ -407,7 +407,7 @@ function Receipts({receipts,setReceipts,bank,setBank,bills=[],currentMonth}){
       <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Dépenses variables</h2>
       <button onClick={()=>setView("add")} style={{background:"linear-gradient(135deg,#7C3AED,#EC4899)",color:"#fff",border:"none",borderRadius:10,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ Ajouter</button>
     </div>
-    <button onClick={()=>autoMatch(monthReceipts,setReceipts,bank,"expense")} style={{width:"100%",padding:"10px",background:C.indigoLight,color:C.indigo,border:`1px solid ${C.border}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:16}}>⚡ Rapprocher automatiquement</button>
+    <button onClick={()=>autoMatch(monthReceipts,setReceipts,bank,"expense",receipts)} style={{width:"100%",padding:"10px",background:C.indigoLight,color:C.indigo,border:`1px solid ${C.border}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:16}}>⚡ Rapprocher automatiquement</button>
     {monthReceipts.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.sub}}>
       <div style={{fontSize:40,marginBottom:12}}>🧾</div>
       <p style={{fontSize:14}}>Aucun ticket ce mois-ci.</p>
@@ -551,6 +551,21 @@ function Bills({bills,setBills,currentMonth,bank,schedules,setSchedules}){
   const deleteSchedule=(schId)=>{
     setSchedules(s=>s.filter(x=>x.id!==schId));
     setBills(b=>b.filter(x=>x.scheduleId!==schId));
+  };
+
+  const regenerateAll=()=>{
+    // Pour chaque échéancier, recrée les occurrences manquantes (sans toucher aux rapprochées)
+    setBills(existingBills=>{
+      let result=[...existingBills];
+      schedules.forEach(sch=>{
+        const existingIds=new Set(result.filter(b=>b.scheduleId===sch.id).map(b=>b.date));
+        const allOccs=generateOccurrences(sch);
+        const missing=allOccs.filter(o=>!existingIds.has(o.date));
+        result=[...result,...missing];
+      });
+      return result;
+    });
+    alert("Échéances régénérées !");
   };
 
   const goToEditSchedule=(schId)=>{
@@ -836,7 +851,12 @@ function Bills({bills,setBills,currentMonth,bank,schedules,setSchedules}){
       </div>
 
       {schedules.length>0&&<div style={{marginTop:20}}>
-        <p style={{fontSize:13,fontWeight:700,color:C.sub,marginBottom:10,letterSpacing:.5,textTransform:"uppercase"}}>Échéanciers enregistrés</p>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <p style={{fontSize:13,fontWeight:700,color:C.sub,letterSpacing:.5,textTransform:"uppercase"}}>Échéanciers enregistrés</p>
+          <button onClick={regenerateAll} style={{background:C.amberLight,color:C.amber,border:"none",borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+            ↺ Régénérer
+          </button>
+        </div>
         {schedules.map(s=><div key={s.id} style={{background:C.surface,borderRadius:12,padding:"12px 14px",marginBottom:8,border:`1px solid ${C.border}`}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
             <div style={{flex:1,minWidth:0}}>
@@ -869,7 +889,7 @@ function Bills({bills,setBills,currentMonth,bank,schedules,setSchedules}){
         + Échéancier
       </button>
     </div>
-    <button onClick={()=>autoMatch(monthBills,setBills,bank,"expense")} style={{width:"100%",padding:"10px",background:C.indigoLight,color:C.indigo,border:`1px solid ${C.border}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:12}}>⚡ Rapprocher automatiquement</button>
+    <button onClick={()=>autoMatch(monthBills,setBills,bank,"expense",bills)} style={{width:"100%",padding:"10px",background:C.indigoLight,color:C.indigo,border:`1px solid ${C.border}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:12}}>⚡ Rapprocher automatiquement</button>
     {monthBills.length>0&&<div style={{background:"linear-gradient(135deg,#7C3AED,#EC4899)",borderRadius:14,padding:"14px 16px",marginBottom:16}}>
       <div><p style={{color:"rgba(255,255,255,.6)",fontSize:11}}>CE MOIS</p><p style={{color:"#fff",fontSize:22,fontWeight:700}}>{fmtAbs(total)}</p></div>
     </div>}
@@ -909,7 +929,7 @@ function MonthSelector({currentMonth,setCurrentMonth}){
 }
 
 // ── Auto-match helper ────────────────────────────────────────────────────
-function autoMatch(items, setItems, bank, type) {
+function autoMatch(items, setItems, bank, type, allItems) {
   const results = {matched:[], duplicates:[], unmatched:[]};
   const usedBankIds = new Set();
 
@@ -939,7 +959,13 @@ function autoMatch(items, setItems, bank, type) {
     }
   });
 
-  setItems(updated);
+  // Si on a passé un sous-ensemble (ex: monthBills), on merge dans le tableau complet
+  if(allItems) {
+    const updatedIds = new Set(updated.map(x=>x.id));
+    setItems(allItems.map(x => updatedIds.has(x.id) ? updated.find(u=>u.id===x.id) : x));
+  } else {
+    setItems(updated);
+  }
 
   const msg = [
     results.matched.length > 0 ? `✔ ${results.matched.length} rapprochement(s) effectué(s)` : null,
@@ -1250,7 +1276,7 @@ function Recettes({recettes, setRecettes, bank, currentMonth, rSchedules, setRSc
       <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Recettes</h2>
       <button onClick={()=>setView("add")} style={{background:"linear-gradient(135deg,#059669,#10B981)",color:"#fff",border:"none",borderRadius:10,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ Ajouter</button>
     </div>
-    <button onClick={()=>autoMatch(monthRecettes,setRecettes,bank,"income")}
+    <button onClick={()=>autoMatch(monthRecettes,setRecettes,bank,"income",recettes)}
       style={{width:"100%",padding:"10px",background:C.sageLight,color:C.sage,border:`1px solid ${C.sage}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:16}}>
       ⚡ Rapprocher automatiquement
     </button>
