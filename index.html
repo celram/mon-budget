@@ -1407,7 +1407,7 @@ ${[
 
 function App(){
   const [tab,setTab]=useState("dashboard");
-  const [bank,setBank]=useState(()=>load("bank",INIT_BANK));
+  const [bank,setBank]=useState(()=>load("bank",INIT_BANK).filter(b=>b.label&&b.label!=="Transaction"));
   const [receipts,setReceipts]=useState(()=>load("receipts",INIT_RECEIPTS));
   const [bills,setBills]=useState(()=>load("bills",INIT_BILLS));
   const [recettes,setRecettes]=useState(()=>load("recettes",[]));
