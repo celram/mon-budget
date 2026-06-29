@@ -439,7 +439,7 @@ function Bank({bank,setBank,receipts,bills,recettes=[]}){
         const cols=l.split(";");
         const rawDate=cols[0]?.trim()||"";
         const rawAmount=cols[1]?.trim()||"";
-        const rawLabel=cols[4]?.trim()||cols[2]?.trim()||"Transaction";
+        const rawLabel=cols[4]?.trim()||cols[2]?.trim()||"Solde du compte";
         const amount=parseFloat(rawAmount.replace(",","."))||0;
         if(!rawDate||!rawDate.match(/\d{2}\/\d{2}\/\d{4}/)||amount===0)return;
         const[d,m,y]=rawDate.split("/");
@@ -461,7 +461,7 @@ function Bank({bank,setBank,receipts,bills,recettes=[]}){
       <strong>Format CSV :</strong> date;libellé;montant<br/>
       <span style={{opacity:.7}}>ex : 02/06/2026;EDF;-87.40</span>
     </div>
-    {bank.map(b=>{
+    {[...bank].sort((a,b)=>b.date.localeCompare(a.date)).map(b=>{
       const rm=receipts.find(r=>r.bankId===b.id);
       const bm=bills.find(f=>f.bankId===b.id);
       const rec=recettes.find(r=>r.bankId===b.id);
@@ -1255,9 +1255,8 @@ function Recettes({recettes, setRecettes, bank, currentMonth}) {
       style={{width:"100%",padding:"10px",background:C.sageLight,color:C.sage,border:`1px solid ${C.sage}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:16}}>
       ⚡ Rapprocher automatiquement
     </button>
-    {monthRecettes.length>0&&<div style={{background:"linear-gradient(135deg,#059669,#10B981)",borderRadius:14,padding:"14px 16px",marginBottom:16,display:"flex",justifyContent:"space-between"}}>
+    {monthRecettes.length>0&&<div style={{background:"linear-gradient(135deg,#2563EB,#0EA5E9)",borderRadius:14,padding:"14px 16px",marginBottom:16}}>
       <div><p style={{color:"rgba(255,255,255,.6)",fontSize:11}}>TOTAL</p><p style={{color:"#fff",fontSize:22,fontWeight:700}}>{fmtAbs(total)}</p></div>
-      <div style={{textAlign:"right"}}><p style={{color:"rgba(255,255,255,.6)",fontSize:11}}>RAPPROCHÉES</p><p style={{color:"#fff",fontSize:22,fontWeight:700}}>{matched}/{monthRecettes.length}</p></div>
     </div>}
     {monthRecettes.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.sub}}>
       <div style={{fontSize:40,marginBottom:12}}>💰</div>
@@ -1277,7 +1276,7 @@ function Recettes({recettes, setRecettes, bank, currentMonth}) {
             {linkedBank&&<p style={{fontSize:11,color:C.sage,marginTop:2}}>✔ {linkedBank.label}</p>}
           </div>
           <div style={{textAlign:"right",marginLeft:8}}>
-            <p style={{fontWeight:700,color:C.sage,fontSize:15}}>+{fmtAbs(r.amount)}</p>
+            <p style={{fontWeight:700,color:"#2563EB",fontSize:15}}>+{fmtAbs(r.amount)}</p>
             <div style={{marginTop:4}}><Badge s={r.status}/></div>
           </div>
         </div>
