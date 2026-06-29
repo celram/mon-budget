@@ -1416,13 +1416,16 @@ function App(){
   useEffect(()=>save("bills",bills),[bills]);
   useEffect(()=>save("recettes",recettes),[recettes]);
 
+  const [schedules,setSchedules]=useState(()=>load("schedules",[]));
+  const [rSchedules,setRSchedules]=useState(()=>load("recSchedules",[]));
+  useEffect(()=>save("schedules",schedules),[schedules]);
+  useEffect(()=>save("recSchedules",rSchedules),[rSchedules]);
+
   const bankMonth=bank.filter(b=>b.date&&b.date.startsWith(currentMonth));
   const receiptsMonth=receipts.filter(r=>r.date&&r.date.startsWith(currentMonth));
 
   const handleExportJSON=()=>{
-    const schedules=load("schedules",[]);
-    const recSchedules=load("recSchedules",[]);
-    downloadJSON({bank,receipts,bills,recettes,schedules,recSchedules,exportedAt:new Date().toISOString()},"mon-budget-sauvegarde.json");
+    downloadJSON({bank,receipts,bills,recettes,schedules,rSchedules,exportedAt:new Date().toISOString()},"mon-budget-sauvegarde.json");
     setShowExport(false);
   };
 
@@ -1435,9 +1438,9 @@ function App(){
         if(data.bank)setBank(data.bank);
         if(data.receipts)setReceipts(data.receipts);
         if(data.bills)setBills(data.bills);
-        if(data.schedules)save("schedules",data.schedules);
+        if(data.schedules){save("schedules",data.schedules);setSchedules(data.schedules);}
         if(data.recettes)setRecettes(data.recettes);
-        if(data.recSchedules)save("recSchedules",data.recSchedules);
+        if(data.recSchedules){save("recSchedules",data.recSchedules);setRSchedules(data.recSchedules);}
         alert("Données importées avec succès !");
       }catch{alert("Fichier invalide.");}
     };
@@ -1446,11 +1449,6 @@ function App(){
   };
 
   const importRef=useRef();
-
-  const [schedules,setSchedules]=useState(()=>load("schedules",[]));
-  const [rSchedules,setRSchedules]=useState(()=>load("recSchedules",[]));
-  useEffect(()=>save("schedules",schedules),[schedules]);
-  useEffect(()=>save("recSchedules",rSchedules),[rSchedules]);
 
   const recettesMonth=recettes.filter(r=>r.date&&r.date.startsWith(currentMonth));
   const views={
