@@ -39,16 +39,10 @@ const C = {
 
 function load(key,def){try{const v=localStorage.getItem(key);return v?JSON.parse(v):def;}catch{return def;}}
 function save(key,val){
-  try{
-    localStorage.setItem(key,JSON.stringify(val));
-    return true;
-  }catch(e){
-    console.error("Échec de sauvegarde pour",key,e);
-    window.__saveError=true;
-    return false;
-  }
+  try{localStorage.setItem(key,JSON.stringify(val));return true;}
+  catch(e){console.error("Échec sauvegarde",key,e);return false;}
 }
-function compressImage(dataUrl,maxWidth=900,quality=0.6){
+function compressImage(dataUrl,maxWidth=600,quality=0.35){
   return new Promise((resolve)=>{
     const img=new Image();
     img.onload=()=>{
@@ -83,23 +77,6 @@ function Badge({s}){
   };
   const t=map[s]||map.doubt;
   return <span style={{background:t.bg,color:t.color,borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:600,whiteSpace:"nowrap"}}>{t.icon} {t.label}</span>;
-}
-
-class ErrorBoundary extends React.Component {
-  constructor(props){super(props);this.state={error:null};}
-  static getDerivedStateFromError(e){return{error:e};}
-  render(){
-    if(this.state.error){
-      return <div style={{padding:20,background:"#FEE2E2",borderRadius:12,margin:16,fontSize:13,color:"#DC2626"}}>
-        <p style={{fontWeight:700,marginBottom:8}}>⚠️ Erreur dans l'onglet {this.props.name}</p>
-        <p style={{fontFamily:"monospace",wordBreak:"break-all"}}>{String(this.state.error)}</p>
-        <button onClick={()=>this.setState({error:null})} style={{marginTop:12,padding:"8px 16px",background:"#DC2626",color:"#fff",border:"none",borderRadius:8,cursor:"pointer"}}>
-          Réessayer
-        </button>
-      </div>;
-    }
-    return this.props.children;
-  }
 }
 
 // ── Dashboard ────────────────────────────────────────────────────────────
@@ -216,7 +193,7 @@ function Dashboard({bank,receipts,bills}){
   </div>;
 }
 
-function Receipts({receipts,setReceipts,bank,setBank,bills=[],currentMonth}){
+function Receipts({receipts,setReceipts,bank,setBank}){
   const [view,setView]=useState("list");
   const [selected,setSelected]=useState(null);
   const [form,setForm]=useState({label:"",amount:"",date:todayISO(),photo:null});
@@ -310,11 +287,7 @@ function Receipts({receipts,setReceipts,bank,setBank,bills=[],currentMonth}){
   if(view==="match"){
     const r=receipts.find(x=>x.id===selected);
     const candidates=r?findCandidates(r):[];
-    const usedBankIds=new Set([
-      ...receipts.filter(x=>x.bankId&&x.id!==selected).map(x=>x.bankId),
-      ...bills.filter(x=>x.bankId).map(x=>x.bankId),
-    ]);
-    const others=bank.filter(b=>b.amount<0&&!candidates.find(c=>c.id===b.id)&&!usedBankIds.has(b.id));
+    const others=bank.filter(b=>b.amount<0&&!candidates.find(c=>c.id===b.id));
     return <div style={{animation:"fadeIn .3s ease"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
         <button onClick={()=>setView(selected?"detail":"list")} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
@@ -371,7 +344,7 @@ function Receipts({receipts,setReceipts,bank,setBank,bills=[],currentMonth}){
       <input type="date" value={eDate} onChange={e=>setEDate(e.target.value)}
         style={{width:"100%",padding:"11px 13px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:16,fontSize:15}}/>
       <button onClick={saveEdit} disabled={!eLabel||!eAmount}
-        style={{width:"100%",padding:13,background:C.indigo,color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",opacity:(!eLabel||!eAmount)?0.4:1}}>
+        style={{width:"100%",padding:13,background:C.indigo,color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",opacity:(!eLabel||!eAmount)?.4:1}}>
         Enregistrer les modifications
       </button>
     </div>;
@@ -443,25 +416,24 @@ function Receipts({receipts,setReceipts,bank,setBank,bills=[],currentMonth}){
     <input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}
       style={{width:"100%",padding:"12px 14px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:16,fontSize:15}}/>
     <button onClick={add} disabled={!form.label||!form.amount}
-      style={{width:"100%",padding:14,background:C.indigo,color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",opacity:(!form.label||!form.amount)?0.4:1}}>
+      style={{width:"100%",padding:14,background:C.indigo,color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",opacity:(!form.label||!form.amount)?.4:1}}>
       Enregistrer la dépense
     </button>
   </div>;
 
   // ── LIST VIEW ─────────────────────────────────────────────────────────
-  const monthReceipts=receipts.filter(r=>r.date&&r.date.startsWith(currentMonth));
   return <div style={{animation:"fadeIn .3s ease"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
       <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Dépenses variables</h2>
       <button onClick={()=>setView("add")} style={{background:"linear-gradient(135deg,#7C3AED,#EC4899)",color:"#fff",border:"none",borderRadius:10,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ Ajouter</button>
     </div>
-    <button onClick={()=>autoMatch(monthReceipts,setReceipts,bank,"expense",receipts)} style={{width:"100%",padding:"10px",background:C.indigoLight,color:C.indigo,border:`1px solid ${C.border}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:16}}>⚡ Rapprocher automatiquement</button>
-    {monthReceipts.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.sub}}>
+    <button onClick={()=>autoMatch(receipts,setReceipts,bank,"expense")} style={{width:"100%",padding:"10px",background:C.indigoLight,color:C.indigo,border:`1px solid ${C.border}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:16}}>⚡ Rapprocher automatiquement</button>
+    {receipts.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.sub}}>
       <div style={{fontSize:40,marginBottom:12}}>🧾</div>
-      <p style={{fontSize:14}}>Aucun ticket ce mois-ci.</p>
+      <p style={{fontSize:14}}>Aucun ticket enregistré.</p>
       <p style={{fontSize:13,marginTop:4}}>Appuyez sur "+ Ajouter" pour commencer.</p>
     </div>}
-    {[...monthReceipts].sort((a,b)=>b.date.localeCompare(a.date)).map(r=><div key={r.id} onClick={()=>goToDetail(r.id)} style={{background:C.surface,borderRadius:12,padding:14,marginBottom:10,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",gap:12,alignItems:"center"}}>
+    {[...receipts].sort((a,b)=>b.date.localeCompare(a.date)).map(r=><div key={r.id} onClick={()=>goToDetail(r.id)} style={{background:C.surface,borderRadius:12,padding:14,marginBottom:10,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",gap:12,alignItems:"center"}}>
       {r.photo
         ?<img src={r.photo} alt="" style={{width:48,height:48,borderRadius:8,objectFit:"cover",flexShrink:0}}/>
         :<div style={{width:48,height:48,borderRadius:8,background:C.indigoLight,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🧾</div>
@@ -491,9 +463,9 @@ function Bank({bank,setBank,receipts,bills,recettes=[]}){
         const cols=l.split(";");
         const rawDate=cols[0]?.trim()||"";
         const rawAmount=cols[1]?.trim()||"";
-        const rawLabel=cols[4]?.trim()||cols[2]?.trim()||"";
+        const rawLabel=cols[4]?.trim()||cols[2]?.trim()||"Transaction";
         const amount=parseFloat(rawAmount.replace(",","."))||0;
-        if(!rawDate||!rawDate.match(/\d{2}\/\d{2}\/\d{4}/)||amount===0||!rawLabel)return;
+        if(!rawDate||!rawDate.match(/\d{2}\/\d{2}\/\d{4}/)||amount===0)return;
         const[d,m,y]=rawDate.split("/");
         const isoDate=`${y}-${m}-${d}`;
         parsed.push({id:"imp"+Date.now()+i,date:isoDate,label:rawLabel,amount});
@@ -513,7 +485,7 @@ function Bank({bank,setBank,receipts,bills,recettes=[]}){
       <strong>Format CSV :</strong> date;libellé;montant<br/>
       <span style={{opacity:.7}}>ex : 02/06/2026;EDF;-87.40</span>
     </div>
-    {[...bank].sort((a,b)=>b.date.localeCompare(a.date)).map(b=>{
+    {bank.map(b=>{
       const rm=receipts.find(r=>r.bankId===b.id);
       const bm=bills.find(f=>f.bankId===b.id);
       const rec=recettes.find(r=>r.bankId===b.id);
@@ -540,37 +512,11 @@ function Bank({bank,setBank,receipts,bills,recettes=[]}){
 
 // ── Factures fixes ────────────────────────────────────────────────────────
 const CATS=["Énergie","Télécom & Internet","Assurance","Eau","Prêt","Loisirs","École","Impôts","Autre"];
-
-const fmtMonth=ym=>{
-  if(!ym||ym.length<7)return "";
-  const[y,m]=ym.split("-");
-  return new Date(+y,+m-1,1).toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
-};
-
-function MonthPicker({label,value,onChange}){
-  const opts=[];
-  for(let y=2026;y<=2035;y++){
-    const startM=(y===2026?6:1);
-    for(let m=startM;m<=12;m++){
-      const val=`${y}-${String(m).padStart(2,"0")}`;
-      const lbl=new Date(y,m-1,1).toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
-      opts.push({val,lbl});
-    }
-  }
-  return <div>
-    <p style={{fontSize:12,color:C.sub,marginBottom:6}}>{label}</p>
-    <select value={value} onChange={e=>onChange(e.target.value)}
-      style={{width:"100%",padding:"11px 10px",borderRadius:8,border:`1px solid ${C.border}`,fontSize:14,background:"#fff",color:C.navy}}>
-      <option value="">-- Choisir --</option>
-      {opts.map(o=><option key={o.val} value={o.val}>{o.lbl}</option>)}
-    </select>
-  </div>;
-}
-function Bills({bills,setBills,currentMonth,bank,schedules,setSchedules}){
+function Bills({bills,setBills,currentMonth,bank}){
+  const [schedules,setSchedules]=useState(()=>load("schedules",[]));
   const [view,setView]=useState("list");
   const [editTarget,setEditTarget]=useState(null);
   const [editSchTarget,setEditSchTarget]=useState(null);
-  const [selectedBill,setSelectedBill]=useState(null);
   // Occurrence edit state
   const [eDate,setEDate]=useState("");
   const [eAmt,setEAmt]=useState("");
@@ -586,8 +532,17 @@ function Bills({bills,setBills,currentMonth,bank,schedules,setSchedules}){
   const [form,setForm]=useState({label:"",category:"Autre",amount:"",dateFrom:nowYM,dateTo:nowYM,fixedDay:""});
   const CATS=["Énergie","Télécom & Internet","Assurance","Eau","Prêt","Loisirs","École","Impôts","Autre"];
 
+  useEffect(()=>save("schedules",schedules),[schedules]);
+
   const monthBills=bills.filter(b=>b.date&&b.date.startsWith(currentMonth));
   const total=monthBills.reduce((s,b)=>s+b.amount,0);
+  const paid=monthBills.filter(b=>b.status==="paid").length;
+
+  const fmtMonth=ym=>{
+    if(!ym||ym.length<7)return "";
+    const[y,m]=ym.split("-");
+    return new Date(+y,+m-1,1).toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+  };
 
   const generateOccurrences=(sch)=>{
     const occs=[];
@@ -621,21 +576,6 @@ function Bills({bills,setBills,currentMonth,bank,schedules,setSchedules}){
     setBills(b=>b.filter(x=>x.scheduleId!==schId));
   };
 
-  const regenerateAll=()=>{
-    // Pour chaque échéancier, recrée les occurrences manquantes (sans toucher aux rapprochées)
-    setBills(existingBills=>{
-      let result=[...existingBills];
-      schedules.forEach(sch=>{
-        const existingIds=new Set(result.filter(b=>b.scheduleId===sch.id).map(b=>b.date));
-        const allOccs=generateOccurrences(sch);
-        const missing=allOccs.filter(o=>!existingIds.has(o.date));
-        result=[...result,...missing];
-      });
-      return result;
-    });
-    alert("Échéances régénérées !");
-  };
-
   const goToEditSchedule=(schId)=>{
     const s=schedules.find(x=>x.id===schId);
     if(!s)return;
@@ -655,10 +595,6 @@ function Bills({bills,setBills,currentMonth,bank,schedules,setSchedules}){
     setEditSchTarget(null);setView("addSchedule");
   };
 
-  const goToDetail=(id)=>{setSelectedBill(id);setView("detail");};
-
-  const goToMatchBill=(id)=>{setSelectedBill(id);setView("matchBill");};
-
   const goToEditOccurrence=(id)=>{
     const occ=bills.find(b=>b.id===id);
     if(!occ)return;
@@ -669,22 +605,16 @@ function Bills({bills,setBills,currentMonth,bank,schedules,setSchedules}){
   const saveOccurrence=()=>{
     setBills(b=>b.map(x=>x.id===editTarget
       ?{...x,date:eDate,amount:parseFloat(eAmt.replace(",","."))}:x));
-    setEditTarget(null);
-    if(selectedBill)setView("detail");else setView("list");
+    setEditTarget(null);setView("list");
   };
 
   const deleteOccurrence=(id)=>{
     setBills(b=>b.filter(x=>x.id!==id));
-    setEditTarget(null);setSelectedBill(null);setView("list");
+    setEditTarget(null);setView("list");
   };
 
-  const linkBillToBank=(billId,bankId)=>{
-    setBills(list=>list.map(b=>b.id===billId?{...b,status:"paid",bankId}:b));
-    setSelectedBill(billId);setView("detail");
-  };
-
-  const unlinkBill=(billId)=>{
-    setBills(list=>list.map(b=>b.id===billId?{...b,status:"missing",bankId:null}:b));
+  const toggleStatus=(id)=>{
+    setBills(b=>b.map(x=>x.id===id?{...x,status:x.status==="paid"?"missing":"paid"}:x));
   };
 
   // Nombre d'échéances calculé
@@ -693,6 +623,26 @@ function Bills({bills,setBills,currentMonth,bank,schedules,setSchedules}){
     const[fy,fm]=from.split("-").map(Number);
     const[ty,tm]=to.split("-").map(Number);
     return Math.max(0,(ty-fy)*12+(tm-fm)+1);
+  };
+
+  const MonthPicker=({label,value,onChange})=>{
+    const opts=[];
+    for(let y=2026;y<=2035;y++){
+      const startM=(y===2026?6:1);
+      for(let m=startM;m<=12;m++){
+        const val=`${y}-${String(m).padStart(2,"0")}`;
+        const lbl=new Date(y,m-1,1).toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+        opts.push({val,lbl});
+      }
+    }
+    return <div>
+      <p style={{fontSize:12,color:C.sub,marginBottom:6}}>{label}</p>
+      <select value={value} onChange={e=>onChange(e.target.value)}
+        style={{width:"100%",padding:"11px 10px",borderRadius:8,border:`1px solid ${C.border}`,fontSize:14,background:"#fff",color:C.navy}}>
+        <option value="">-- Choisir --</option>
+        {opts.map(o=><option key={o.val} value={o.val}>{o.lbl}</option>)}
+      </select>
+    </div>;
   };
 
   // ── EDIT SCHEDULE VIEW ────────────────────────────────────────────────
@@ -736,100 +686,13 @@ function Bills({bills,setBills,currentMonth,bank,schedules,setSchedules}){
     </div>;
   }
 
-  // ── DETAIL VIEW ───────────────────────────────────────────────────────
-  if(view==="detail"){
-    const f=bills.find(x=>x.id===selectedBill);
-    if(!f){setView("list");return null;}
-    const linkedBank=f.bankId?bank.find(b=>b.id===f.bankId):null;
-    return <div style={{animation:"fadeIn .3s ease"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <button onClick={()=>{setView("list");setSelectedBill(null);}} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
-          <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>{f.label}</h2>
-        </div>
-        <button onClick={()=>goToEditOccurrence(f.id)} style={{background:C.indigoLight,color:C.indigo,border:"none",borderRadius:8,padding:"6px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>✎ Modifier</button>
-      </div>
-      <div style={{background:C.surface,borderRadius:14,padding:16,border:`1px solid ${C.border}`,marginBottom:12}}>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><span style={{color:C.sub,fontSize:13}}>Nom</span><span style={{fontWeight:600,color:C.navy}}>{f.label}</span></div>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><span style={{color:C.sub,fontSize:13}}>Catégorie</span><span style={{fontWeight:600,color:C.navy}}>{f.category}</span></div>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><span style={{color:C.sub,fontSize:13}}>Date</span><span style={{fontWeight:600,color:C.navy}}>{fmtDate(f.date)}</span></div>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><span style={{color:C.sub,fontSize:13}}>Montant</span><span style={{fontWeight:700,color:C.navy,fontSize:16}}>{fmtAbs(f.amount)}</span></div>
-        <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.sub,fontSize:13}}>Statut</span><Badge s={f.status}/></div>
-      </div>
-      {linkedBank&&<div style={{background:C.sageLight,borderRadius:12,padding:"11px 14px",marginBottom:12,fontSize:13}}>
-        <p style={{color:C.sage,fontWeight:700,marginBottom:3}}>✔ Lié à la ligne bancaire</p>
-        <p style={{color:C.navy}}>{linkedBank.label}</p>
-        <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtDate(linkedBank.date)} · {fmtAbs(Math.abs(linkedBank.amount))}</p>
-      </div>}
-      <div style={{display:"flex",gap:8,marginBottom:8}}>
-        <button onClick={()=>goToMatchBill(f.id)}
-          style={{flex:1,padding:11,background:C.indigoLight,color:C.indigo,border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:13}}>
-          {f.bankId?"Changer le lien":"Lier au relevé"}
-        </button>
-        {f.bankId&&<button onClick={()=>{unlinkBill(f.id);}}
-          style={{flex:1,padding:11,background:C.amberLight,color:C.amber,border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:13}}>
-          Délier
-        </button>}
-      </div>
-      <button onClick={()=>deleteOccurrence(f.id)}
-        style={{width:"100%",padding:11,background:C.coralLight,color:C.coral,border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:13}}>
-        Supprimer cette échéance
-      </button>
-    </div>;
-  }
-
-  // ── MATCH BILL VIEW ───────────────────────────────────────────────────
-  if(view==="matchBill"){
-    const f=bills.find(x=>x.id===selectedBill);
-    const findBillCandidates=(bill)=>{
-      const bDate=new Date(bill.date);
-      return bank.filter(b=>{
-        if(b.amount>=0)return false;
-        if(Math.abs(Math.abs(b.amount)-bill.amount)>0.01)return false;
-        const diffDays=Math.abs((new Date(b.date)-bDate)/(1000*60*60*24));
-        return diffDays<=10;
-      });
-    };
-    const candidates=f?findBillCandidates(f):[];
-    const others=bank.filter(b=>b.amount<0&&!candidates.find(c=>c.id===b.id));
-    return <div style={{animation:"fadeIn .3s ease"}}>
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
-        <button onClick={()=>setView("detail")} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
-        <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Lier au relevé</h2>
-      </div>
-      {f&&<div style={{background:C.indigoLight,borderRadius:12,padding:"11px 14px",marginBottom:16,fontSize:13,color:C.indigo}}>
-        Facture : <strong>{f.label}</strong> — {fmtAbs(f.amount)} le {fmtDate(f.date)}
-      </div>}
-      {candidates.length>0&&<>
-        <p style={{fontSize:12,fontWeight:700,color:C.sage,marginBottom:8,textTransform:"uppercase",letterSpacing:.5}}>✔ Correspondances probables</p>
-        {candidates.map(b=><button key={b.id} onClick={()=>linkBillToBank(selectedBill,b.id)}
-          style={{width:"100%",textAlign:"left",background:C.sageLight,border:`1px solid ${C.sage}`,borderRadius:10,padding:"11px 14px",marginBottom:8,cursor:"pointer"}}>
-          <p style={{fontWeight:600,color:C.navy,fontSize:13}}>{b.label}</p>
-          <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtDate(b.date)} · {fmtAbs(Math.abs(b.amount))}</p>
-        </button>)}
-      </>}
-      {others.length>0&&<>
-        <p style={{fontSize:12,fontWeight:700,color:C.sub,marginBottom:8,marginTop:12,textTransform:"uppercase",letterSpacing:.5}}>Autres lignes bancaires</p>
-        {others.slice(0,15).map(b=><button key={b.id} onClick={()=>linkBillToBank(selectedBill,b.id)}
-          style={{width:"100%",textAlign:"left",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 14px",marginBottom:8,cursor:"pointer"}}>
-          <p style={{fontWeight:600,color:C.navy,fontSize:13}}>{b.label}</p>
-          <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtDate(b.date)} · {fmtAbs(Math.abs(b.amount))}</p>
-        </button>)}
-      </>}
-      <button onClick={()=>setView("detail")}
-        style={{width:"100%",padding:11,background:C.border,color:C.sub,border:"none",borderRadius:10,fontSize:13,cursor:"pointer",marginTop:4}}>
-        Ignorer pour l'instant
-      </button>
-    </div>;
-  }
-
   // ── EDIT OCCURRENCE VIEW ──────────────────────────────────────────────
   if(view==="editOccurrence"){
     const occ=bills.find(b=>b.id===editTarget);
     if(!occ){setView("list");return null;}
     return <div style={{animation:"fadeIn .3s ease"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
-        <button onClick={()=>{setEditTarget(null);setView(selectedBill?"detail":"list");}} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+        <button onClick={()=>{setEditTarget(null);setView("list");}} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
         <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Modifier l'échéance</h2>
       </div>
       <div style={{background:C.surface,borderRadius:14,padding:16,border:`1px solid ${C.border}`}}>
@@ -893,18 +756,13 @@ function Bills({bills,setBills,currentMonth,bank,schedules,setSchedules}){
           disabled={!form.label||!form.amount||!form.dateFrom||!form.dateTo||!form.fixedDay}
           style={{width:"100%",padding:13,background:"linear-gradient(135deg,#7C3AED,#EC4899)",color:"#fff",
             border:"none",borderRadius:10,fontWeight:700,cursor:"pointer",fontSize:15,
-            opacity:(!form.label||!form.amount||!form.dateFrom||!form.dateTo||!form.fixedDay)?0.4:1}}>
+            opacity:(!form.label||!form.amount||!form.dateFrom||!form.dateTo||!form.fixedDay)?.4:1}}>
           Générer toutes les échéances
         </button>
       </div>
 
       {schedules.length>0&&<div style={{marginTop:20}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-          <p style={{fontSize:13,fontWeight:700,color:C.sub,letterSpacing:.5,textTransform:"uppercase"}}>Échéanciers enregistrés</p>
-          <button onClick={regenerateAll} style={{background:C.amberLight,color:C.amber,border:"none",borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
-            ↺ Régénérer
-          </button>
-        </div>
+        <p style={{fontSize:13,fontWeight:700,color:C.sub,marginBottom:10,letterSpacing:.5,textTransform:"uppercase"}}>Échéanciers enregistrés</p>
         {schedules.map(s=><div key={s.id} style={{background:C.surface,borderRadius:12,padding:"12px 14px",marginBottom:8,border:`1px solid ${C.border}`}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
             <div style={{flex:1,minWidth:0}}>
@@ -937,23 +795,39 @@ function Bills({bills,setBills,currentMonth,bank,schedules,setSchedules}){
         + Échéancier
       </button>
     </div>
-    <button onClick={()=>autoMatch(monthBills,setBills,bank,"expense",bills)} style={{width:"100%",padding:"10px",background:C.indigoLight,color:C.indigo,border:`1px solid ${C.border}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:12}}>⚡ Rapprocher automatiquement</button>
-    {monthBills.length>0&&<div style={{background:"linear-gradient(135deg,#7C3AED,#EC4899)",borderRadius:14,padding:"14px 16px",marginBottom:16}}>
+    <button onClick={()=>autoMatch(monthBills,setBills,bank,"expense")} style={{width:"100%",padding:"10px",background:C.indigoLight,color:C.indigo,border:`1px solid ${C.border}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:12}}>⚡ Rapprocher automatiquement</button>
+    {monthBills.length>0&&<div style={{background:"linear-gradient(135deg,#7C3AED,#EC4899)",borderRadius:14,padding:"14px 16px",marginBottom:16,display:"flex",justifyContent:"space-between"}}>
       <div><p style={{color:"rgba(255,255,255,.6)",fontSize:11}}>CE MOIS</p><p style={{color:"#fff",fontSize:22,fontWeight:700}}>{fmtAbs(total)}</p></div>
+      <div style={{textAlign:"right"}}><p style={{color:"rgba(255,255,255,.6)",fontSize:11}}>PAYÉES</p><p style={{color:"#fff",fontSize:22,fontWeight:700}}>{paid}/{monthBills.length}</p></div>
     </div>}
     {monthBills.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.sub}}>
       <div style={{fontSize:40,marginBottom:12}}>📋</div>
       <p style={{fontSize:14}}>Aucune facture ce mois-ci.</p>
       <p style={{fontSize:13,marginTop:4}}>Ajoutez un échéancier pour commencer.</p>
     </div>}
-    {monthBills.map(f=><div key={f.id} onClick={()=>goToDetail(f.id)} style={{background:C.surface,borderRadius:12,padding:"12px 14px",marginBottom:8,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <div style={{flex:1,minWidth:0}}>
-        <p style={{fontWeight:600,color:C.navy,fontSize:14}}>{f.label}</p>
-        <p style={{color:C.sub,fontSize:11,marginTop:2}}>{f.category} · {fmtDate(f.date)}</p>
-      </div>
-      <div style={{textAlign:"right",marginLeft:12}}>
-        <p style={{fontWeight:700,color:C.navy,fontSize:15}}>{fmtAbs(f.amount)}</p>
-        <div style={{marginTop:4}}><Badge s={f.status}/></div>
+    {monthBills.map(f=><div key={f.id} style={{background:C.surface,borderRadius:12,padding:"12px 14px",marginBottom:8,border:`1px solid ${C.border}`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{flex:1,minWidth:0}}>
+          <p style={{fontWeight:600,color:C.navy,fontSize:14}}>{f.label}</p>
+          <p style={{color:C.sub,fontSize:11,marginTop:2}}>{f.category} · {fmtDate(f.date)}</p>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <div style={{textAlign:"right"}}>
+            <p style={{fontWeight:700,color:C.navy,fontSize:15}}>{fmtAbs(f.amount)}</p>
+            <div style={{marginTop:4}}><Badge s={f.status}/></div>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:4,marginLeft:4}}>
+            <button onClick={()=>toggleStatus(f.id)}
+              style={{background:f.status==="paid"?C.sageLight:C.amberLight,color:f.status==="paid"?C.sage:C.amber,
+                border:"none",borderRadius:6,width:28,height:28,cursor:"pointer",fontSize:14}}>
+              {f.status==="paid"?"✔":"○"}
+            </button>
+            <button onClick={()=>goToEditOccurrence(f.id)}
+              style={{background:C.indigoLight,color:C.indigo,border:"none",borderRadius:6,width:28,height:28,cursor:"pointer",fontSize:13}}>
+              ✎
+            </button>
+          </div>
+        </div>
       </div>
     </div>)}
   </div>;
@@ -976,7 +850,7 @@ function MonthSelector({currentMonth,setCurrentMonth}){
 }
 
 // ── Auto-match helper ────────────────────────────────────────────────────
-function autoMatch(items, setItems, bank, type, allItems) {
+function autoMatch(items, setItems, bank, type) {
   const results = {matched:[], duplicates:[], unmatched:[]};
   const usedBankIds = new Set();
 
@@ -1006,13 +880,7 @@ function autoMatch(items, setItems, bank, type, allItems) {
     }
   });
 
-  // Si on a passé un sous-ensemble (ex: monthBills), on merge dans le tableau complet
-  if(allItems) {
-    const updatedIds = new Set(updated.map(x=>x.id));
-    setItems(allItems.map(x => updatedIds.has(x.id) ? updated.find(u=>u.id===x.id) : x));
-  } else {
-    setItems(updated);
-  }
+  setItems(updated);
 
   const msg = [
     results.matched.length > 0 ? `✔ ${results.matched.length} rapprochement(s) effectué(s)` : null,
@@ -1024,10 +892,10 @@ function autoMatch(items, setItems, bank, type, allItems) {
 }
 
 // ── Recettes ──────────────────────────────────────────────────────────────
-function Recettes({recettes, setRecettes, bank, currentMonth, rSchedules, setRSchedules}) {
+function Recettes({recettes, setRecettes, bank}) {
   const [view, setView] = useState("list");
   const [selected, setSelected] = useState(null);
-  const [addType, setAddType] = useState(null);
+  const [addType, setAddType] = useState(null); // null | "one" | "recurring"
   // Form ponctuelle
   const [form, setForm] = useState({label:"", amount:"", date:todayISO()});
   // Form récurrente
@@ -1036,6 +904,35 @@ function Recettes({recettes, setRecettes, bank, currentMonth, rSchedules, setRSc
   const [eLabel, setELabel] = useState("");
   const [eAmount, setEAmount] = useState("");
   const [eDate, setEDate] = useState("");
+  // Schedules récurrentes
+  const [rSchedules, setRSchedules] = useState(()=>load("recSchedules",[]));
+  useEffect(()=>save("recSchedules",rSchedules),[rSchedules]);
+
+  const fmtMonth = ym => {
+    if(!ym||ym.length<7) return "";
+    const[y,m]=ym.split("-");
+    return new Date(+y,+m-1,1).toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+  };
+
+  const MonthPicker = ({label,value,onChange}) => {
+    const opts=[];
+    for(let y=2026;y<=2035;y++){
+      const startM=(y===2026?6:1);
+      for(let m=startM;m<=12;m++){
+        const val=`${y}-${String(m).padStart(2,"0")}`;
+        const lbl=new Date(y,m-1,1).toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+        opts.push({val,lbl});
+      }
+    }
+    return <div>
+      <p style={{fontSize:12,color:C.sub,marginBottom:6}}>{label}</p>
+      <select value={value} onChange={e=>onChange(e.target.value)}
+        style={{width:"100%",padding:"11px 10px",borderRadius:8,border:`1px solid ${C.border}`,fontSize:14,background:"#fff",color:C.navy}}>
+        <option value="">-- Choisir --</option>
+        {opts.map(o=><option key={o.val} value={o.val}>{o.lbl}</option>)}
+      </select>
+    </div>;
+  };
 
   const generateOccurrences = (sch) => {
     const occs=[];
@@ -1057,7 +954,7 @@ function Recettes({recettes, setRecettes, bank, currentMonth, rSchedules, setRSc
     if(!form.label||!form.amount) return;
     const newR={id:"rec"+Date.now(),date:form.date,label:form.label,
       amount:parseFloat(form.amount.replace(",",".")),status:"missing",bankId:null,type:"one"};
-    setRecettes(r=>[newR,...r]);
+    setRecettes(r=>[newR,...r].sort((a,b)=>b.date.localeCompare(a.date)));
     setForm({label:"",amount:"",date:todayISO()});
     setAddType(null);setView("list");
   };
@@ -1068,38 +965,16 @@ function Recettes({recettes, setRecettes, bank, currentMonth, rSchedules, setRSc
       amount:parseFloat(rForm.amount.replace(",",".")),
       day:parseInt(rForm.day),dateFrom:rForm.dateFrom,dateTo:rForm.dateTo};
     setRSchedules(s=>[...s,sch]);
-    setRecettes(r=>[...r,...generateOccurrences(sch)]);
+    const occs=generateOccurrences(sch);
+    setRecettes(r=>[...r,...occs].sort((a,b)=>b.date.localeCompare(a.date)));
     setRForm({label:"",amount:"",day:"",dateFrom:"",dateTo:""});
     setAddType(null);setView("list");
-  };
-
-  const regenerateSchedule = schId => {
-    const sch=rSchedules.find(x=>x.id===schId);
-    if(!sch) return;
-    setRecettes(r=>[...r.filter(x=>x.scheduleId!==schId),...generateOccurrences(sch)]);
-  };
-
-  const regenerateAllRecettes = () => {
-    setRecettes(existing=>{
-      let result=[...existing];
-      rSchedules.forEach(sch=>{
-        const existingDates=new Set(result.filter(r=>r.scheduleId===sch.id).map(r=>r.date));
-        const allOccs=generateOccurrences(sch);
-        const missing=allOccs.filter(o=>!existingDates.has(o.date));
-        result=[...result,...missing];
-      });
-      return result;
-    });
-    alert("Versements régénérés !");
   };
 
   const deleteSchedule = schId => {
     setRSchedules(s=>s.filter(x=>x.id!==schId));
     setRecettes(r=>r.filter(x=>x.scheduleId!==schId));
   };
-
-  const goToDetail = id => { setSelected(id); setView("detail"); };
-  const goToMatch = id => { setSelected(id); setView("match"); };
 
   const goToEdit = id => {
     const r=recettes.find(x=>x.id===id);
@@ -1110,8 +985,15 @@ function Recettes({recettes, setRecettes, bank, currentMonth, rSchedules, setRSc
 
   const saveEdit = () => {
     setRecettes(r=>r.map(x=>x.id===selected
+      ?{...x,label:eLabel,amount:parseFloat(eAmt.replace(",",".")),date:eDate}:x));
+    setSelected(null);setView("list");
+  };
+
+  // Fix: use eAmount not eAmt in saveEdit
+  const saveEditFixed = () => {
+    setRecettes(r=>r.map(x=>x.id===selected
       ?{...x,label:eLabel,amount:parseFloat(eAmount.replace(",",".")),date:eDate}:x));
-    setSelected(selected);setView("detail");
+    setSelected(null);setView("list");
   };
 
   const deleteRec = id => {
@@ -1123,7 +1005,7 @@ function Recettes({recettes, setRecettes, bank, currentMonth, rSchedules, setRSc
 
   const linkToBank = (recId, bankId) => {
     setRecettes(r=>r.map(x=>x.id===recId?{...x,status:"matched",bankId}:x));
-    setSelected(recId);setView("detail");
+    setSelected(null);setView("list");
   };
 
   const findCandidates = rec => {
@@ -1135,104 +1017,74 @@ function Recettes({recettes, setRecettes, bank, currentMonth, rSchedules, setRSc
     });
   };
 
-  // ── DETAIL VIEW ───────────────────────────────────────────────────────
-  if(view==="detail"){
-    const r=recettes.find(x=>x.id===selected);
-    if(!r){setView("list");return null;}
-    const linkedBank=r.bankId?bank.find(b=>b.id===r.bankId):null;
-    return <div style={{animation:"fadeIn .3s ease"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <button onClick={()=>{setView("list");setSelected(null);}} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
-          <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>{r.label}</h2>
-        </div>
-        <button onClick={()=>goToEdit(r.id)} style={{background:C.indigoLight,color:C.indigo,border:"none",borderRadius:8,padding:"6px 12px",fontSize:13,fontWeight:600,cursor:"pointer"}}>✎ Modifier</button>
-      </div>
-      <div style={{background:C.surface,borderRadius:14,padding:16,border:`1px solid ${C.border}`,marginBottom:12}}>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><span style={{color:C.sub,fontSize:13}}>Nom</span><span style={{fontWeight:600,color:C.navy}}>{r.label}</span></div>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><span style={{color:C.sub,fontSize:13}}>Date</span><span style={{fontWeight:600,color:C.navy}}>{fmtDate(r.date)}</span></div>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><span style={{color:C.sub,fontSize:13}}>Montant</span><span style={{fontWeight:700,color:"#2563EB",fontSize:16}}>+{fmtAbs(r.amount)}</span></div>
-        <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.sub,fontSize:13}}>Statut</span><Badge s={r.status}/></div>
-      </div>
-      {linkedBank&&<div style={{background:C.sageLight,borderRadius:12,padding:"11px 14px",marginBottom:12,fontSize:13}}>
-        <p style={{color:C.sage,fontWeight:700,marginBottom:3}}>✔ Lié à la ligne bancaire</p>
-        <p style={{color:C.navy}}>{linkedBank.label}</p>
-        <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtDate(linkedBank.date)} · +{fmtAbs(linkedBank.amount)}</p>
-      </div>}
-      <div style={{display:"flex",gap:8,marginBottom:8}}>
-        <button onClick={()=>goToMatch(r.id)}
-          style={{flex:1,padding:11,background:C.indigoLight,color:C.indigo,border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:13}}>
-          {r.bankId?"Changer le lien":"Lier au relevé"}
-        </button>
-        {r.bankId&&<button onClick={()=>unlinkRec(r.id)}
-          style={{flex:1,padding:11,background:C.amberLight,color:C.amber,border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:13}}>
-          Délier
-        </button>}
-      </div>
-      <button onClick={()=>deleteRec(r.id)}
-        style={{width:"100%",padding:11,background:C.coralLight,color:C.coral,border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:13}}>
-        Supprimer cette recette
-      </button>
-    </div>;
-  }
-
-  // ── EDIT VIEW ─────────────────────────────────────────────────────────
-  if(view==="edit"){
-    return <div style={{animation:"fadeIn .3s ease"}}>
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
-        <button onClick={()=>setView("detail")} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
-        <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Modifier la recette</h2>
-      </div>
-      <p style={{fontSize:12,color:C.sub,marginBottom:5}}>Nom</p>
-      <input type="text" value={eLabel} onChange={e=>setELabel(e.target.value)}
-        style={{width:"100%",padding:"11px 13px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:10,fontSize:15}}/>
-      <p style={{fontSize:12,color:C.sub,marginBottom:5}}>Montant (€)</p>
-      <input type="text" inputMode="decimal" value={eAmount} onChange={e=>setEAmount(e.target.value)}
-        style={{width:"100%",padding:"11px 13px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:10,fontSize:15}}/>
-      <p style={{fontSize:12,color:C.sub,marginBottom:5}}>Date</p>
-      <input type="date" value={eDate} onChange={e=>setEDate(e.target.value)}
-        style={{width:"100%",padding:"11px 13px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:16,fontSize:15}}/>
-      <button onClick={saveEdit} disabled={!eLabel||!eAmount}
-        style={{width:"100%",padding:13,background:"#2563EB",color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",opacity:(!eLabel||!eAmount)?0.4:1}}>
-        Enregistrer les modifications
-      </button>
-    </div>;
-  }
-
   // ── MATCH VIEW ────────────────────────────────────────────────────────
   if(view==="match"){
     const rec=recettes.find(x=>x.id===selected);
     const candidates=rec?findCandidates(rec):[];
-    const usedBankIds=new Set(recettes.filter(x=>x.bankId&&x.id!==selected).map(x=>x.bankId));
-    const others=bank.filter(b=>b.amount>0&&!candidates.find(c=>c.id===b.id)&&!usedBankIds.has(b.id));
+    const others=bank.filter(b=>b.amount>0&&!candidates.find(c=>c.id===b.id));
     return <div style={{animation:"fadeIn .3s ease"}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
-        <button onClick={()=>setView("detail")} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+        <button onClick={()=>setView("list")} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
         <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Lier au relevé</h2>
       </div>
-      {rec&&<div style={{background:"#EFF6FF",borderRadius:12,padding:"11px 14px",marginBottom:16,fontSize:13,color:"#2563EB"}}>
-        Recette : <strong>{rec.label}</strong> — +{fmtAbs(rec.amount)} le {fmtDate(rec.date)}
+      {rec&&<div style={{background:C.indigoLight,borderRadius:12,padding:"11px 14px",marginBottom:16,fontSize:13,color:C.indigo}}>
+        <strong>{rec.label}</strong> — {fmtAbs(rec.amount)} le {fmtDate(rec.date)}
       </div>}
       {candidates.length>0&&<>
         <p style={{fontSize:12,fontWeight:700,color:C.sage,marginBottom:8,textTransform:"uppercase",letterSpacing:.5}}>✔ Correspondances probables</p>
         {candidates.map(b=><button key={b.id} onClick={()=>linkToBank(selected,b.id)}
           style={{width:"100%",textAlign:"left",background:C.sageLight,border:`1px solid ${C.sage}`,borderRadius:10,padding:"11px 14px",marginBottom:8,cursor:"pointer"}}>
           <p style={{fontWeight:600,color:C.navy,fontSize:13}}>{b.label}</p>
-          <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtDate(b.date)} · +{fmtAbs(b.amount)}</p>
+          <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtDate(b.date)} · {fmtAbs(b.amount)}</p>
         </button>)}
       </>}
       {others.length>0&&<>
-        <p style={{fontSize:12,fontWeight:700,color:C.sub,marginBottom:8,marginTop:12,textTransform:"uppercase",letterSpacing:.5}}>Autres lignes bancaires</p>
-        {others.slice(0,15).map(b=><button key={b.id} onClick={()=>linkToBank(selected,b.id)}
+        <p style={{fontSize:12,fontWeight:700,color:C.sub,marginBottom:8,marginTop:12,textTransform:"uppercase",letterSpacing:.5}}>Autres entrées bancaires</p>
+        {others.slice(0,10).map(b=><button key={b.id} onClick={()=>linkToBank(selected,b.id)}
           style={{width:"100%",textAlign:"left",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"11px 14px",marginBottom:8,cursor:"pointer"}}>
           <p style={{fontWeight:600,color:C.navy,fontSize:13}}>{b.label}</p>
-          <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtDate(b.date)} · +{fmtAbs(b.amount)}</p>
+          <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtDate(b.date)} · {fmtAbs(b.amount)}</p>
         </button>)}
       </>}
-      <button onClick={()=>setView("detail")}
-        style={{width:"100%",padding:11,background:C.border,color:C.sub,border:"none",borderRadius:10,fontSize:13,cursor:"pointer",marginTop:4}}>
+      <button onClick={()=>setView("list")} style={{width:"100%",padding:11,background:C.border,color:C.sub,border:"none",borderRadius:10,fontSize:13,cursor:"pointer",marginTop:4}}>
         Ignorer pour l'instant
       </button>
+    </div>;
+  }
+
+  // ── EDIT VIEW ─────────────────────────────────────────────────────────
+  if(view==="edit"){
+    const rec=recettes.find(x=>x.id===selected);
+    if(!rec){setView("list");return null;}
+    return <div style={{animation:"fadeIn .3s ease"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+        <button onClick={()=>setView("list")} style={{background:"none",border:"none",fontSize:24,cursor:"pointer",color:C.navy}}>←</button>
+        <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Modifier la recette</h2>
+      </div>
+      <div style={{background:C.surface,borderRadius:14,padding:16,border:`1px solid ${C.border}`}}>
+        <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Nature du versement</p>
+        <input type="text" value={eLabel} onChange={e=>setELabel(e.target.value)}
+          style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
+        <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Montant (€)</p>
+        <input type="text" inputMode="decimal" value={eAmount} onChange={e=>setEAmount(e.target.value)}
+          style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
+        <p style={{fontSize:12,color:C.sub,marginBottom:6}}>Date</p>
+        <input type="date" value={eDate} onChange={e=>setEDate(e.target.value)}
+          style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:20,fontSize:14}}/>
+        <button onClick={saveEditFixed}
+          style={{width:"100%",padding:12,background:"linear-gradient(135deg,#7C3AED,#EC4899)",color:"#fff",border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:14,marginBottom:10}}>
+          Enregistrer les modifications
+        </button>
+        {rec.scheduleId&&<p style={{fontSize:11,color:C.sub,textAlign:"center",marginBottom:8}}>Seule cette occurrence sera modifiée</p>}
+        <button onClick={()=>deleteRec(rec.id)}
+          style={{width:"100%",padding:12,background:C.coralLight,color:C.coral,border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:14}}>
+          Supprimer cette recette
+        </button>
+        {rec.scheduleId&&<button onClick={()=>deleteSchedule(rec.scheduleId)}
+          style={{width:"100%",padding:12,background:C.coralLight,color:C.coral,border:"none",borderRadius:10,fontWeight:600,cursor:"pointer",fontSize:14,marginTop:8}}>
+          Supprimer tout l'échéancier
+        </button>}
+      </div>
     </div>;
   }
 
@@ -1244,8 +1096,8 @@ function Recettes({recettes, setRecettes, bank, currentMonth, rSchedules, setRSc
         <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Ajouter une recette</h2>
       </div>
       <button onClick={()=>setAddType("one")}
-        style={{width:"100%",padding:"18px 16px",background:C.surface,border:`2px solid #2563EB`,borderRadius:14,marginBottom:12,cursor:"pointer",textAlign:"left"}}>
-        <p style={{fontWeight:700,color:"#2563EB",fontSize:15,marginBottom:4}}>💸 Recette ponctuelle</p>
+        style={{width:"100%",padding:"18px 16px",background:C.surface,border:`2px solid ${C.indigo}`,borderRadius:14,marginBottom:12,cursor:"pointer",textAlign:"left"}}>
+        <p style={{fontWeight:700,color:C.indigo,fontSize:15,marginBottom:4}}>💸 Recette ponctuelle</p>
         <p style={{color:C.sub,fontSize:13}}>Un versement unique (remboursement, prime…)</p>
       </button>
       <button onClick={()=>setAddType("recurring")}
@@ -1269,7 +1121,7 @@ function Recettes({recettes, setRecettes, bank, currentMonth, rSchedules, setRSc
       <input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}
         style={{width:"100%",padding:"12px 14px",borderRadius:10,border:`1px solid ${C.border}`,marginBottom:16,fontSize:15}}/>
       <button onClick={addOne} disabled={!form.label||!form.amount}
-        style={{width:"100%",padding:14,background:"#2563EB",color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",opacity:(!form.label||!form.amount)?0.4:1}}>
+        style={{width:"100%",padding:14,background:"linear-gradient(135deg,#7C3AED,#EC4899)",color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",opacity:(!form.label||!form.amount)?.4:1}}>
         Enregistrer
       </button>
     </div>;
@@ -1297,46 +1149,33 @@ function Recettes({recettes, setRecettes, bank, currentMonth, rSchedules, setRSc
             onChange={e=>setRForm(f=>({...f,day:e.target.value}))}
             style={{width:"100%",padding:"11px 12px",borderRadius:8,border:`1px solid ${C.border}`,marginBottom:12,fontSize:14}}/>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}}>
-            <MonthPicker label="Premier versement" value={rForm.dateFrom?rForm.dateFrom.slice(0,7):""} onChange={v=>setRForm(f=>({...f,dateFrom:v+"-01"}))}/>
-            <MonthPicker label="Dernier versement" value={rForm.dateTo?rForm.dateTo.slice(0,7):""} onChange={v=>setRForm(f=>({...f,dateTo:v+"-01"}))}/>
+            <MonthPicker label="Premier versement" value={rForm.dateFrom} onChange={v=>setRForm(f=>({...f,dateFrom:v+"-01"}))}/>
+            <MonthPicker label="Dernier versement" value={rForm.dateTo} onChange={v=>setRForm(f=>({...f,dateTo:v+"-01"}))}/>
           </div>
-          {rForm.dateFrom&&rForm.dateTo&&<div style={{background:"#EFF6FF",borderRadius:8,padding:"10px 12px",marginBottom:10,fontSize:13,color:"#2563EB"}}>
+          {rForm.dateFrom&&rForm.dateTo&&<div style={{background:C.indigoLight,borderRadius:8,padding:"10px 12px",marginBottom:10,fontSize:13,color:C.indigo}}>
             📅 {fmtMonth(rForm.dateFrom.slice(0,7))} → {fmtMonth(rForm.dateTo.slice(0,7))}
           </div>}
           {nb>0&&<div style={{background:C.sageLight,borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:13,color:C.sage}}>
             ✔ {nb} versement{nb>1?"s":""} de {rForm.amount||"…"} €
           </div>}
           <button onClick={addRecurring} disabled={!rForm.label||!rForm.amount||!rForm.day||!rForm.dateFrom||!rForm.dateTo}
-            style={{width:"100%",padding:13,background:"linear-gradient(135deg,#2563EB,#0EA5E9)",color:"#fff",border:"none",borderRadius:10,fontWeight:700,cursor:"pointer",fontSize:15,
-              opacity:(!rForm.label||!rForm.amount||!rForm.day||!rForm.dateFrom||!rForm.dateTo)?0.4:1}}>
+            style={{width:"100%",padding:13,background:"linear-gradient(135deg,#059669,#10B981)",color:"#fff",border:"none",borderRadius:10,fontWeight:700,cursor:"pointer",fontSize:15,
+              opacity:(!rForm.label||!rForm.amount||!rForm.day||!rForm.dateFrom||!rForm.dateTo)?.4:1}}>
             Générer tous les versements
           </button>
         </div>
         {rSchedules.length>0&&<div style={{marginTop:20}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <p style={{fontSize:13,fontWeight:700,color:C.sub,letterSpacing:.5,textTransform:"uppercase"}}>Échéanciers recettes</p>
-            <button onClick={regenerateAllRecettes} style={{background:"#EFF6FF",color:"#2563EB",border:"none",borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
-              ↺ Régénérer
-            </button>
-          </div>
-          {rSchedules.map(s=><div key={s.id} style={{background:C.surface,borderRadius:12,padding:"12px 14px",marginBottom:8,border:`1px solid ${C.border}`}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-              <div style={{flex:1,minWidth:0}}>
-                <p style={{fontWeight:600,color:C.navy,fontSize:13}}>{s.label}</p>
-                <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtAbs(s.amount)} · J{s.day}</p>
-                <p style={{color:"#2563EB",fontSize:11,marginTop:2}}>{fmtMonth(s.dateFrom.slice(0,7))} → {fmtMonth(s.dateTo.slice(0,7))}</p>
-              </div>
-              <div style={{display:"flex",gap:6,flexShrink:0}}>
-                <button onClick={()=>regenerateSchedule(s.id)}
-                  style={{background:C.indigoLight,color:C.indigo,border:"none",borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
-                  ↺ Régén.
-                </button>
-                <button onClick={()=>deleteSchedule(s.id)}
-                  style={{background:C.coralLight,color:C.coral,border:"none",borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
-                  Suppr.
-                </button>
-              </div>
+          <p style={{fontSize:13,fontWeight:700,color:C.sub,marginBottom:10,letterSpacing:.5,textTransform:"uppercase"}}>Échéanciers recettes</p>
+          {rSchedules.map(s=><div key={s.id} style={{background:C.surface,borderRadius:12,padding:"12px 14px",marginBottom:8,border:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <p style={{fontWeight:600,color:C.navy,fontSize:13}}>{s.label}</p>
+              <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtAbs(s.amount)} · J{s.day}</p>
+              <p style={{color:C.sage,fontSize:11,marginTop:2}}>{fmtMonth(s.dateFrom.slice(0,7))} → {fmtMonth(s.dateTo.slice(0,7))}</p>
             </div>
+            <button onClick={()=>deleteSchedule(s.id)}
+              style={{background:C.coralLight,color:C.coral,border:"none",borderRadius:8,padding:"6px 10px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+              Suppr.
+            </button>
           </div>)}
         </div>}
       </div>;
@@ -1344,40 +1183,59 @@ function Recettes({recettes, setRecettes, bank, currentMonth, rSchedules, setRSc
   }
 
   // ── LIST VIEW ─────────────────────────────────────────────────────────
-  const monthRecettes=recettes.filter(r=>r.date&&r.date.startsWith(currentMonth));
-  const sorted=[...monthRecettes].sort((a,b)=>b.date.localeCompare(a.date));
-  const total=monthRecettes.reduce((s,r)=>s+r.amount,0);
+  const sorted=[...recettes].sort((a,b)=>b.date.localeCompare(a.date));
+  const total=recettes.reduce((s,r)=>s+r.amount,0);
+  const matched=recettes.filter(r=>r.status==="matched").length;
 
   return <div style={{animation:"fadeIn .3s ease"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
       <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Recettes</h2>
-      <button onClick={()=>setView("add")} style={{background:"linear-gradient(135deg,#2563EB,#0EA5E9)",color:"#fff",border:"none",borderRadius:10,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ Ajouter</button>
+      <button onClick={()=>setView("add")} style={{background:"linear-gradient(135deg,#059669,#10B981)",color:"#fff",border:"none",borderRadius:10,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ Ajouter</button>
     </div>
-    <button onClick={()=>autoMatch(monthRecettes,setRecettes,bank,"income",recettes)}
-      style={{width:"100%",padding:"10px",background:"#EFF6FF",color:"#2563EB",border:`1px solid #2563EB`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:16}}>
+    <button onClick={()=>autoMatch(recettes,setRecettes,bank,"income")}
+      style={{width:"100%",padding:"10px",background:C.sageLight,color:C.sage,border:`1px solid ${C.sage}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:16}}>
       ⚡ Rapprocher automatiquement
     </button>
-    {monthRecettes.length>0&&<div style={{background:"linear-gradient(135deg,#2563EB,#0EA5E9)",borderRadius:14,padding:"14px 16px",marginBottom:16}}>
+    {recettes.length>0&&<div style={{background:"linear-gradient(135deg,#059669,#10B981)",borderRadius:14,padding:"14px 16px",marginBottom:16,display:"flex",justifyContent:"space-between"}}>
       <div><p style={{color:"rgba(255,255,255,.6)",fontSize:11}}>TOTAL</p><p style={{color:"#fff",fontSize:22,fontWeight:700}}>{fmtAbs(total)}</p></div>
+      <div style={{textAlign:"right"}}><p style={{color:"rgba(255,255,255,.6)",fontSize:11}}>RAPPROCHÉES</p><p style={{color:"#fff",fontSize:22,fontWeight:700}}>{matched}/{recettes.length}</p></div>
     </div>}
-    {monthRecettes.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.sub}}>
+    {recettes.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.sub}}>
       <div style={{fontSize:40,marginBottom:12}}>💰</div>
-      <p style={{fontSize:14}}>Aucune recette ce mois-ci.</p>
+      <p style={{fontSize:14}}>Aucune recette enregistrée.</p>
       <p style={{fontSize:13,marginTop:4}}>Appuyez sur "+ Ajouter" pour commencer.</p>
     </div>}
-    {sorted.map(r=><div key={r.id} onClick={()=>goToDetail(r.id)} style={{background:C.surface,borderRadius:12,padding:"12px 14px",marginBottom:8,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <div style={{flex:1,minWidth:0}}>
-        <p style={{fontWeight:600,color:C.navy,fontSize:14}}>{r.label}</p>
-        <p style={{color:C.sub,fontSize:11,marginTop:2}}>{fmtDate(r.date)}</p>
-      </div>
-      <div style={{textAlign:"right",marginLeft:12}}>
-        <p style={{fontWeight:700,color:"#2563EB",fontSize:15}}>+{fmtAbs(r.amount)}</p>
-        <div style={{marginTop:4}}><Badge s={r.status}/></div>
-      </div>
-    </div>)}
+    {sorted.map(r=>{
+      const linkedBank=r.bankId?bank.find(b=>b.id===r.bankId):null;
+      return <div key={r.id} style={{background:C.surface,borderRadius:12,padding:14,marginBottom:10,border:`1px solid ${C.border}`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+              <p style={{fontWeight:600,color:C.navy,fontSize:14}}>{r.label}</p>
+              {r.type==="recurring"&&<span style={{fontSize:10,background:C.sageLight,color:C.sage,borderRadius:4,padding:"1px 5px"}}>récurrent</span>}
+            </div>
+            <p style={{color:C.sub,fontSize:12}}>{fmtDate(r.date)}</p>
+            {linkedBank&&<p style={{fontSize:11,color:C.sage,marginTop:2}}>✔ {linkedBank.label}</p>}
+          </div>
+          <div style={{textAlign:"right",marginLeft:8}}>
+            <p style={{fontWeight:700,color:C.sage,fontSize:15}}>+{fmtAbs(r.amount)}</p>
+            <div style={{marginTop:4}}><Badge s={r.status}/></div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:6,marginTop:10}}>
+          <button onClick={()=>goToEdit(r.id)}
+            style={{flex:1,padding:"7px",background:C.indigoLight,color:C.indigo,border:"none",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer"}}>✎ Modifier</button>
+          <button onClick={()=>{setSelected(r.id);setView("match");}}
+            style={{flex:1,padding:"7px",background:r.bankId?C.sageLight:C.amberLight,color:r.bankId?C.sage:C.amber,border:"none",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+            {r.bankId?"✔ Lié":"Lier"}
+          </button>
+          {r.bankId&&<button onClick={()=>unlinkRec(r.id)}
+            style={{padding:"7px 10px",background:C.amberLight,color:C.amber,border:"none",borderRadius:8,fontSize:12,cursor:"pointer"}}>Délier</button>}
+        </div>
+      </div>;
+    })}
   </div>;
 }
-
 
 
 const TABS=[
@@ -1463,14 +1321,14 @@ ${rows(receiptsMonth, [
 <table><thead><tr><th>Date prévue</th><th>Libellé</th><th>Montant</th><th>Statut</th></tr></thead><tbody>
 ${rows(billsMonth, [
   f=>fmtD(f.date), f=>f.label, f=>fmt2(f.amount),
-  f=>f.status==="paid"?'<span class="ok">✔ Payé</span>':f.status==="missing"?'<span class="bad">✕ Manquant</span>':'<span class="warn">⚠ Incertain</span>'
+  f=>f.status==="paid"||f.status==="matched"||f.bankId?'<span class="ok">✔ Rapproché</span>':f.status==="missing"?'<span class="bad">✕ Manquant</span>':'<span class="warn">⚠ Incertain</span>'
 ])}
 </tbody></table>
 
 <h2>Anomalies détectées</h2>
 ${[
-  ...billsMonth.filter(f=>f.status==="missing").map(f=>`<p class="bad">✕ Facture manquante : ${f.label} — ${fmt2(f.amount)} prévue le ${fmtD(f.date)}</p>`),
-  ...billsMonth.filter(f=>f.status==="doubt").map(f=>`<p class="warn">⚠ Incertain : ${f.label} — paiement non confirmé</p>`),
+  ...billsMonth.filter(f=>f.status==="missing"&&!f.bankId).map(f=>`<p class="bad">✕ Facture manquante : ${f.label} — ${fmt2(f.amount)} prévue le ${fmtD(f.date)}</p>`),
+  ...billsMonth.filter(f=>f.status==="doubt"&&!f.bankId).map(f=>`<p class="warn">⚠ Incertain : ${f.label} — paiement non confirmé</p>`),
   ...receiptsMonth.filter(r=>r.status==="missing").map(r=>`<p class="warn">⚠ Ticket sans contrepartie bancaire : ${r.label} (${fmt2(r.amount)})</p>`),
 ].join("")||'<p class="ok">✔ Aucune anomalie détectée ce mois-ci.</p>'}
 
@@ -1480,14 +1338,16 @@ ${[
 </button>
 </body></html>`;
 
-  const w = window.open("","_blank");
-  w.document.write(html);
-  w.document.close();
+  const blob=new Blob([html],{type:"text/html;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=`rapport-${month}.html`;a.click();
+  URL.revokeObjectURL(url);
 }
 
 function App(){
   const [tab,setTab]=useState("dashboard");
-  const [bank,setBank]=useState(()=>load("bank",INIT_BANK).filter(b=>b.label&&b.label!=="Transaction"));
+  const [bank,setBank]=useState(()=>load("bank",INIT_BANK));
   const [receipts,setReceipts]=useState(()=>load("receipts",INIT_RECEIPTS));
   const [bills,setBills]=useState(()=>load("bills",INIT_BILLS));
   const [recettes,setRecettes]=useState(()=>load("recettes",[]));
@@ -1497,13 +1357,13 @@ function App(){
   const [showExport,setShowExport]=useState(false);
   const [saveError,setSaveError]=useState(false);
 
+  const [schedules,setSchedules]=useState(()=>load("schedules",[]));
+  const [rSchedules,setRSchedules]=useState(()=>load("recSchedules",[]));
+
   useEffect(()=>{ if(!save("bank",bank)) setSaveError(true); },[bank]);
   useEffect(()=>{ if(!save("receipts",receipts)) setSaveError(true); },[receipts]);
   useEffect(()=>{ if(!save("bills",bills)) setSaveError(true); },[bills]);
   useEffect(()=>{ if(!save("recettes",recettes)) setSaveError(true); },[recettes]);
-
-  const [schedules,setSchedules]=useState(()=>load("schedules",[]));
-  const [rSchedules,setRSchedules]=useState(()=>load("recSchedules",[]));
   useEffect(()=>{ if(!save("schedules",schedules)) setSaveError(true); },[schedules]);
   useEffect(()=>{ if(!save("recSchedules",rSchedules)) setSaveError(true); },[rSchedules]);
 
@@ -1521,12 +1381,9 @@ function App(){
     reader.onload=async ev=>{
       try{
         const data=JSON.parse(ev.target.result);
-        // Compresse les photos trop lourdes (>150 Ko) pour éviter de dépasser le quota localStorage
         if(data.receipts){
           for(const r of data.receipts){
-            if(r.photo && r.photo.length>150000){
-              r.photo=await compressImage(r.photo,800,0.5);
-            }
+            if(r.photo&&r.photo.length>80000) r.photo=await compressImage(r.photo,600,0.35);
           }
         }
         if(data.bank)setBank(data.bank);
@@ -1543,7 +1400,6 @@ function App(){
   };
 
   const importRef=useRef();
-
   const recettesMonth=recettes.filter(r=>r.date&&r.date.startsWith(currentMonth));
 
   return <div style={{maxWidth:430,margin:"0 auto",minHeight:"100dvh",background:C.bg,position:"relative"}}>
@@ -1555,7 +1411,7 @@ function App(){
     </div>
 
     {saveError&&<div style={{background:"#FEE2E2",color:"#DC2626",padding:"12px 16px",fontSize:13,fontWeight:600,textAlign:"center"}}>
-      ⚠️ Échec de sauvegarde (mémoire pleine). Fais une sauvegarde JSON (💾) immédiatement et supprime des photos pour libérer de la place.
+      ⚠️ Mémoire pleine ! Clique sur 💾 pour sauvegarder tes données maintenant.
     </div>}
 
     {/* Export/Import modal */}
@@ -1563,20 +1419,16 @@ function App(){
       <div style={{background:C.surface,borderRadius:"20px 20px 0 0",padding:"24px 20px 40px",width:"100%",maxWidth:430,margin:"0 auto"}} onClick={e=>e.stopPropagation()}>
         <div style={{width:36,height:4,borderRadius:2,background:C.border,margin:"0 auto 20px"}}/>
         <p style={{fontWeight:700,color:C.navy,fontSize:17,marginBottom:20}}>Données & Export</p>
-
         <button onClick={handleExportJSON} style={{width:"100%",padding:"13px 16px",background:C.indigoLight,color:C.indigo,border:"none",borderRadius:12,fontSize:14,fontWeight:600,cursor:"pointer",textAlign:"left",marginBottom:10}}>
           💾 Sauvegarder toutes mes données (JSON)
         </button>
-
         <button onClick={()=>importRef.current.click()} style={{width:"100%",padding:"13px 16px",background:C.indigoLight,color:C.indigo,border:"none",borderRadius:12,fontSize:14,fontWeight:600,cursor:"pointer",textAlign:"left",marginBottom:10}}>
           📂 Restaurer une sauvegarde (JSON)
         </button>
         <input ref={importRef} type="file" accept=".json" style={{display:"none"}} onChange={handleImportJSON}/>
-
         <button onClick={()=>{printReconciliationReport(bank,receipts,bills,currentMonth);setShowExport(false);}} style={{width:"100%",padding:"13px 16px",background:C.sageLight,color:C.sage,border:"none",borderRadius:12,fontSize:14,fontWeight:600,cursor:"pointer",textAlign:"left",marginBottom:10}}>
           📄 Rapport de rapprochement PDF (ce mois)
         </button>
-
         <button onClick={()=>setShowExport(false)} style={{width:"100%",padding:12,background:C.border,color:C.sub,border:"none",borderRadius:12,fontSize:14,cursor:"pointer",marginTop:4}}>
           Annuler
         </button>
