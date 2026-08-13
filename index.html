@@ -1391,6 +1391,7 @@ function App(){
         if(data.recettes)setRecettes(data.recettes);
         if(data.recSchedules){save("recSchedules",data.recSchedules);setRSchedules(data.recSchedules);}
         alert("Données importées avec succès !");
+        window.location.reload();
       }catch{alert("Fichier invalide.");}
     };
     reader.readAsText(file);
