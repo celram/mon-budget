@@ -38,26 +38,7 @@ const C = {
 };
 
 function load(key,def){try{const v=localStorage.getItem(key);return v?JSON.parse(v):def;}catch{return def;}}
-function save(key,val){
-  try{localStorage.setItem(key,JSON.stringify(val));return true;}
-  catch(e){console.error("Échec sauvegarde",key,e);return false;}
-}
-function compressImage(dataUrl,maxWidth=600,quality=0.35){
-  return new Promise((resolve)=>{
-    const img=new Image();
-    img.onload=()=>{
-      const scale=Math.min(1,maxWidth/img.width);
-      const canvas=document.createElement("canvas");
-      canvas.width=img.width*scale;
-      canvas.height=img.height*scale;
-      const ctx=canvas.getContext("2d");
-      ctx.drawImage(img,0,0,canvas.width,canvas.height);
-      resolve(canvas.toDataURL("image/jpeg",quality));
-    };
-    img.onerror=()=>resolve(dataUrl);
-    img.src=dataUrl;
-  });
-}
+function save(key,val){try{localStorage.setItem(key,JSON.stringify(val));}catch{}}
 
 const INIT_BANK=[];
 const INIT_RECEIPTS=[];
@@ -193,7 +174,7 @@ function Dashboard({bank,receipts,bills}){
   </div>;
 }
 
-function Receipts({receipts,setReceipts,bank,setBank}){
+function Receipts({receipts,setReceipts,bank,setBank,bills=[],currentMonth}){
   const [view,setView]=useState("list");
   const [selected,setSelected]=useState(null);
   const [form,setForm]=useState({label:"",amount:"",date:todayISO(),photo:null});
@@ -219,20 +200,14 @@ function Receipts({receipts,setReceipts,bank,setBank}){
   const handlePhoto=e=>{
     const file=e.target.files[0];if(!file)return;
     const reader=new FileReader();
-    reader.onload=async ev=>{
-      const compressed=await compressImage(ev.target.result);
-      setPhotoPreview(compressed);setForm(f=>({...f,photo:compressed}));
-    };
+    reader.onload=ev=>{setPhotoPreview(ev.target.result);setForm(f=>({...f,photo:ev.target.result}));};
     reader.readAsDataURL(file);
   };
 
   const handleEditPhoto=e=>{
     const file=e.target.files[0];if(!file)return;
     const reader=new FileReader();
-    reader.onload=async ev=>{
-      const compressed=await compressImage(ev.target.result);
-      setEPreview(compressed);setEPhoto(compressed);
-    };
+    reader.onload=ev=>{setEPreview(ev.target.result);setEPhoto(ev.target.result);};
     reader.readAsDataURL(file);
   };
 
@@ -422,18 +397,19 @@ function Receipts({receipts,setReceipts,bank,setBank}){
   </div>;
 
   // ── LIST VIEW ─────────────────────────────────────────────────────────
+  const monthReceipts=receipts.filter(r=>r.date&&r.date.startsWith(currentMonth));
   return <div style={{animation:"fadeIn .3s ease"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
       <h2 style={{fontSize:18,fontWeight:700,color:C.navy}}>Dépenses variables</h2>
       <button onClick={()=>setView("add")} style={{background:"linear-gradient(135deg,#7C3AED,#EC4899)",color:"#fff",border:"none",borderRadius:10,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ Ajouter</button>
     </div>
-    <button onClick={()=>autoMatch(receipts,setReceipts,bank,"expense")} style={{width:"100%",padding:"10px",background:C.indigoLight,color:C.indigo,border:`1px solid ${C.border}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:16}}>⚡ Rapprocher automatiquement</button>
-    {receipts.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.sub}}>
+    <button onClick={()=>autoMatch(monthReceipts,setReceipts,bank,"expense",receipts)} style={{width:"100%",padding:"10px",background:C.indigoLight,color:C.indigo,border:`1px solid ${C.border}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:16}}>⚡ Rapprocher automatiquement</button>
+    {monthReceipts.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.sub}}>
       <div style={{fontSize:40,marginBottom:12}}>🧾</div>
-      <p style={{fontSize:14}}>Aucun ticket enregistré.</p>
+      <p style={{fontSize:14}}>Aucun ticket ce mois-ci.</p>
       <p style={{fontSize:13,marginTop:4}}>Appuyez sur "+ Ajouter" pour commencer.</p>
     </div>}
-    {[...receipts].sort((a,b)=>b.date.localeCompare(a.date)).map(r=><div key={r.id} onClick={()=>goToDetail(r.id)} style={{background:C.surface,borderRadius:12,padding:14,marginBottom:10,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",gap:12,alignItems:"center"}}>
+    {[...monthReceipts].sort((a,b)=>b.date.localeCompare(a.date)).map(r=><div key={r.id} onClick={()=>goToDetail(r.id)} style={{background:C.surface,borderRadius:12,padding:14,marginBottom:10,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",gap:12,alignItems:"center"}}>
       {r.photo
         ?<img src={r.photo} alt="" style={{width:48,height:48,borderRadius:8,objectFit:"cover",flexShrink:0}}/>
         :<div style={{width:48,height:48,borderRadius:8,background:C.indigoLight,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🧾</div>
@@ -795,7 +771,7 @@ function Bills({bills,setBills,currentMonth,bank}){
         + Échéancier
       </button>
     </div>
-    <button onClick={()=>autoMatch(monthBills,setBills,bank,"expense")} style={{width:"100%",padding:"10px",background:C.indigoLight,color:C.indigo,border:`1px solid ${C.border}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:12}}>⚡ Rapprocher automatiquement</button>
+    <button onClick={()=>autoMatch(monthBills,setBills,bank,"expense",bills)} style={{width:"100%",padding:"10px",background:C.indigoLight,color:C.indigo,border:`1px solid ${C.border}`,borderRadius:10,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:12}}>⚡ Rapprocher automatiquement</button>
     {monthBills.length>0&&<div style={{background:"linear-gradient(135deg,#7C3AED,#EC4899)",borderRadius:14,padding:"14px 16px",marginBottom:16,display:"flex",justifyContent:"space-between"}}>
       <div><p style={{color:"rgba(255,255,255,.6)",fontSize:11}}>CE MOIS</p><p style={{color:"#fff",fontSize:22,fontWeight:700}}>{fmtAbs(total)}</p></div>
       <div style={{textAlign:"right"}}><p style={{color:"rgba(255,255,255,.6)",fontSize:11}}>PAYÉES</p><p style={{color:"#fff",fontSize:22,fontWeight:700}}>{paid}/{monthBills.length}</p></div>
@@ -850,12 +826,12 @@ function MonthSelector({currentMonth,setCurrentMonth}){
 }
 
 // ── Auto-match helper ────────────────────────────────────────────────────
-function autoMatch(items, setItems, bank, type) {
+function autoMatch(items, setItems, bank, type, allItems) {
   const results = {matched:[], duplicates:[], unmatched:[]};
   const usedBankIds = new Set();
 
   const updated = items.map(item => {
-    if(item.bankId) return item; // already linked
+    if(item.bankId) return item;
     const isExpense = type === "expense";
     const candidates = bank.filter(b => {
       if(usedBankIds.has(b.id)) return false;
@@ -870,7 +846,7 @@ function autoMatch(items, setItems, bank, type) {
     if(candidates.length === 1) {
       usedBankIds.add(candidates[0].id);
       results.matched.push({item, bank: candidates[0]});
-      return {...item, status: isExpense ? "matched" : "matched", bankId: candidates[0].id};
+      return {...item, status:"matched", bankId: candidates[0].id};
     } else if(candidates.length > 1) {
       results.duplicates.push({item, candidates});
       return item;
@@ -880,7 +856,12 @@ function autoMatch(items, setItems, bank, type) {
     }
   });
 
-  setItems(updated);
+  if(allItems) {
+    const updatedIds = new Set(updated.map(x=>x.id));
+    setItems(allItems.map(x => updatedIds.has(x.id) ? updated.find(u=>u.id===x.id) : x));
+  } else {
+    setItems(updated);
+  }
 
   const msg = [
     results.matched.length > 0 ? `✔ ${results.matched.length} rapprochement(s) effectué(s)` : null,
@@ -1321,14 +1302,14 @@ ${rows(receiptsMonth, [
 <table><thead><tr><th>Date prévue</th><th>Libellé</th><th>Montant</th><th>Statut</th></tr></thead><tbody>
 ${rows(billsMonth, [
   f=>fmtD(f.date), f=>f.label, f=>fmt2(f.amount),
-  f=>f.status==="paid"||f.status==="matched"||f.bankId?'<span class="ok">✔ Rapproché</span>':f.status==="missing"?'<span class="bad">✕ Manquant</span>':'<span class="warn">⚠ Incertain</span>'
+  f=>f.status==="paid"?'<span class="ok">✔ Payé</span>':f.status==="missing"?'<span class="bad">✕ Manquant</span>':'<span class="warn">⚠ Incertain</span>'
 ])}
 </tbody></table>
 
 <h2>Anomalies détectées</h2>
 ${[
-  ...billsMonth.filter(f=>f.status==="missing"&&!f.bankId).map(f=>`<p class="bad">✕ Facture manquante : ${f.label} — ${fmt2(f.amount)} prévue le ${fmtD(f.date)}</p>`),
-  ...billsMonth.filter(f=>f.status==="doubt"&&!f.bankId).map(f=>`<p class="warn">⚠ Incertain : ${f.label} — paiement non confirmé</p>`),
+  ...billsMonth.filter(f=>f.status==="missing").map(f=>`<p class="bad">✕ Facture manquante : ${f.label} — ${fmt2(f.amount)} prévue le ${fmtD(f.date)}</p>`),
+  ...billsMonth.filter(f=>f.status==="doubt").map(f=>`<p class="warn">⚠ Incertain : ${f.label} — paiement non confirmé</p>`),
   ...receiptsMonth.filter(r=>r.status==="missing").map(r=>`<p class="warn">⚠ Ticket sans contrepartie bancaire : ${r.label} (${fmt2(r.amount)})</p>`),
 ].join("")||'<p class="ok">✔ Aucune anomalie détectée ce mois-ci.</p>'}
 
@@ -1338,11 +1319,9 @@ ${[
 </button>
 </body></html>`;
 
-  const blob=new Blob([html],{type:"text/html;charset=utf-8"});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  a.href=url;a.download=`rapport-${month}.html`;a.click();
-  URL.revokeObjectURL(url);
+  const w = window.open("","_blank");
+  w.document.write(html);
+  w.document.close();
 }
 
 function App(){
@@ -1355,43 +1334,34 @@ function App(){
   const nowStr=`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`;
   const [currentMonth,setCurrentMonth]=useState(nowStr);
   const [showExport,setShowExport]=useState(false);
-  const [saveError,setSaveError]=useState(false);
 
-  const [schedules,setSchedules]=useState(()=>load("schedules",[]));
-  const [rSchedules,setRSchedules]=useState(()=>load("recSchedules",[]));
-
-  useEffect(()=>{ if(!save("bank",bank)) setSaveError(true); },[bank]);
-  useEffect(()=>{ if(!save("receipts",receipts)) setSaveError(true); },[receipts]);
-  useEffect(()=>{ if(!save("bills",bills)) setSaveError(true); },[bills]);
-  useEffect(()=>{ if(!save("recettes",recettes)) setSaveError(true); },[recettes]);
-  useEffect(()=>{ if(!save("schedules",schedules)) setSaveError(true); },[schedules]);
-  useEffect(()=>{ if(!save("recSchedules",rSchedules)) setSaveError(true); },[rSchedules]);
+  useEffect(()=>save("bank",bank),[bank]);
+  useEffect(()=>save("receipts",receipts),[receipts]);
+  useEffect(()=>save("bills",bills),[bills]);
+  useEffect(()=>save("recettes",recettes),[recettes]);
 
   const bankMonth=bank.filter(b=>b.date&&b.date.startsWith(currentMonth));
   const receiptsMonth=receipts.filter(r=>r.date&&r.date.startsWith(currentMonth));
 
   const handleExportJSON=()=>{
-    downloadJSON({bank,receipts,bills,recettes,schedules,rSchedules,exportedAt:new Date().toISOString()},"mon-budget-sauvegarde.json");
+    const schedules=load("schedules",[]);
+    const recSchedules=load("recSchedules",[]);
+    downloadJSON({bank,receipts,bills,recettes,schedules,recSchedules,exportedAt:new Date().toISOString()},"mon-budget-sauvegarde.json");
     setShowExport(false);
   };
 
   const handleImportJSON=(e)=>{
     const file=e.target.files[0]; if(!file)return;
     const reader=new FileReader();
-    reader.onload=async ev=>{
+    reader.onload=ev=>{
       try{
         const data=JSON.parse(ev.target.result);
-        if(data.receipts){
-          for(const r of data.receipts){
-            if(r.photo&&r.photo.length>80000) r.photo=await compressImage(r.photo,600,0.35);
-          }
-        }
         if(data.bank)setBank(data.bank);
         if(data.receipts)setReceipts(data.receipts);
         if(data.bills)setBills(data.bills);
-        if(data.schedules){save("schedules",data.schedules);setSchedules(data.schedules);}
+        if(data.schedules)save("schedules",data.schedules);
         if(data.recettes)setRecettes(data.recettes);
-        if(data.recSchedules){save("recSchedules",data.recSchedules);setRSchedules(data.recSchedules);}
+        if(data.recSchedules)save("recSchedules",data.recSchedules);
         alert("Données importées avec succès !");
       }catch{alert("Fichier invalide.");}
     };
@@ -1400,7 +1370,15 @@ function App(){
   };
 
   const importRef=useRef();
+
   const recettesMonth=recettes.filter(r=>r.date&&r.date.startsWith(currentMonth));
+  const views={
+    dashboard:<Dashboard bank={bankMonth} receipts={receiptsMonth} bills={bills.filter(b=>b.date&&b.date.startsWith(currentMonth))}/>,
+    receipts:<Receipts receipts={receiptsMonth} setReceipts={setReceipts} bank={bank} setBank={setBank}/>,
+    bank:<Bank bank={bankMonth} setBank={setBank} receipts={receiptsMonth} bills={bills} recettes={recettesMonth}/>,
+    bills:<Bills bills={bills} setBills={setBills} currentMonth={currentMonth} bank={bank}/>,
+    recettes:<Recettes recettes={recettesMonth} setRecettes={setRecettes} bank={bank}/>,
+  };
 
   return <div style={{maxWidth:430,margin:"0 auto",minHeight:"100dvh",background:C.bg,position:"relative"}}>
     {/* Header */}
@@ -1410,25 +1388,25 @@ function App(){
       <button onClick={handleExportJSON} style={{background:"linear-gradient(135deg,#0EA5E9,#2563EB)",border:"2px solid rgba(255,255,255,.4)",borderRadius:10,padding:"5px 10px",color:"#fff",fontSize:11,fontWeight:800,cursor:"pointer",flexShrink:0,letterSpacing:.3,boxShadow:"0 2px 8px rgba(37,99,235,.5)"}}>💾 Sauvegarder</button>
     </div>
 
-    {saveError&&<div style={{background:"#FEE2E2",color:"#DC2626",padding:"12px 16px",fontSize:13,fontWeight:600,textAlign:"center"}}>
-      ⚠️ Mémoire pleine ! Clique sur 💾 pour sauvegarder tes données maintenant.
-    </div>}
-
     {/* Export/Import modal */}
     {showExport&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:200,display:"flex",alignItems:"flex-end"}} onClick={()=>setShowExport(false)}>
       <div style={{background:C.surface,borderRadius:"20px 20px 0 0",padding:"24px 20px 40px",width:"100%",maxWidth:430,margin:"0 auto"}} onClick={e=>e.stopPropagation()}>
         <div style={{width:36,height:4,borderRadius:2,background:C.border,margin:"0 auto 20px"}}/>
         <p style={{fontWeight:700,color:C.navy,fontSize:17,marginBottom:20}}>Données & Export</p>
+
         <button onClick={handleExportJSON} style={{width:"100%",padding:"13px 16px",background:C.indigoLight,color:C.indigo,border:"none",borderRadius:12,fontSize:14,fontWeight:600,cursor:"pointer",textAlign:"left",marginBottom:10}}>
           💾 Sauvegarder toutes mes données (JSON)
         </button>
+
         <button onClick={()=>importRef.current.click()} style={{width:"100%",padding:"13px 16px",background:C.indigoLight,color:C.indigo,border:"none",borderRadius:12,fontSize:14,fontWeight:600,cursor:"pointer",textAlign:"left",marginBottom:10}}>
           📂 Restaurer une sauvegarde (JSON)
         </button>
         <input ref={importRef} type="file" accept=".json" style={{display:"none"}} onChange={handleImportJSON}/>
+
         <button onClick={()=>{printReconciliationReport(bank,receipts,bills,currentMonth);setShowExport(false);}} style={{width:"100%",padding:"13px 16px",background:C.sageLight,color:C.sage,border:"none",borderRadius:12,fontSize:14,fontWeight:600,cursor:"pointer",textAlign:"left",marginBottom:10}}>
           📄 Rapport de rapprochement PDF (ce mois)
         </button>
+
         <button onClick={()=>setShowExport(false)} style={{width:"100%",padding:12,background:C.border,color:C.sub,border:"none",borderRadius:12,fontSize:14,cursor:"pointer",marginTop:4}}>
           Annuler
         </button>
@@ -1436,11 +1414,7 @@ function App(){
     </div>}
 
     <div style={{padding:"20px 16px 100px"}}>
-      <div style={{display:tab==="dashboard"?"block":"none"}}><Dashboard bank={bankMonth} receipts={receiptsMonth} bills={bills.filter(b=>b.date&&b.date.startsWith(currentMonth))}/></div>
-      <div style={{display:tab==="receipts"?"block":"none"}}><Receipts receipts={receipts} setReceipts={setReceipts} bank={bank} setBank={setBank} bills={bills} currentMonth={currentMonth}/></div>
-      <div style={{display:tab==="bank"?"block":"none"}}><Bank bank={bankMonth} setBank={setBank} receipts={receiptsMonth} bills={bills} recettes={recettesMonth}/></div>
-      <div style={{display:tab==="bills"?"block":"none"}}><Bills bills={bills} setBills={setBills} currentMonth={currentMonth} bank={bank} schedules={schedules} setSchedules={setSchedules}/></div>
-      <div style={{display:tab==="recettes"?"block":"none"}}><Recettes recettes={recettes} setRecettes={setRecettes} bank={bank} currentMonth={currentMonth} rSchedules={rSchedules} setRSchedules={setRSchedules}/></div>
+      {views[tab]}
     </div>
     <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,background:C.surface,borderTop:`1px solid ${C.border}`,display:"flex",padding:"10px 0 22px",zIndex:100}}>
       {TABS.map(t=><button key={t.id} onClick={()=>setTab(t.id)}
